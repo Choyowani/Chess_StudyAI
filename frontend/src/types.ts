@@ -164,7 +164,7 @@ export type GameSnapshot = {
 };
 
 export type PieceColor = "w" | "b";
-export type ViewMode = "live" | "archive" | "weakness";
+export type ViewMode = "live" | "review" | "archive" | "weakness";
 
 export type BoardSquare = {
   square: string;

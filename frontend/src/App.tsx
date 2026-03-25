@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 
-import { replayContextForPly, parseArchivedCandidateMove } from "./archive";
-import { BoardView, checkedKingSquare, isInteractivePiece, toMoveUci } from "./board";
+import { replayContextForPly } from "./archive";
+import { checkedKingSquare, isInteractivePiece, toMoveUci } from "./board";
 import type {
   ArchivedGame,
   ArchivedGameSummary,
   BoardSquare,
-  CandidateMove,
   CandidateOverlay,
   EvaluationScore,
   GameSnapshot,
@@ -16,6 +16,10 @@ import type {
   ViewMode,
   WeaknessPattern,
 } from "./types";
+import { ArchiveReplayView } from "./views/ArchiveReplayView";
+import { LivePlayView } from "./views/LivePlayView";
+import { PostGameReviewView } from "./views/PostGameReviewView";
+import { WeaknessDashboardView } from "./views/WeaknessDashboardView";
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`http://localhost:8000${input}`, {
@@ -90,6 +94,13 @@ function sortWeaknessPatterns(patterns: WeaknessPattern[]): WeaknessPattern[] {
   });
 }
 
+function viewLabel(viewMode: ViewMode): string {
+  if (viewMode === "live") return "Live Play";
+  if (viewMode === "review") return "Post-Game Review";
+  if (viewMode === "archive") return "Archive Replay";
+  return "Weakness Dashboard";
+}
+
 export function App() {
   const activeUserId = "local-user";
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
@@ -109,27 +120,21 @@ export function App() {
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
   const [isWeaknessLoading, setIsWeaknessLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function createGame() {
-      try {
-        const created = await requestJson<GameSnapshot>("/api/games", { method: "POST" });
-        if (!cancelled) {
-          setSnapshot(created);
-          setMessage("Board ready. White to move.");
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setMessage(error instanceof Error ? error.message : "Failed to create a game.");
-        }
-      }
+  async function createGame() {
+    setMessage("Creating a new board...");
+    try {
+      const created = await requestJson<GameSnapshot>("/api/games", { method: "POST" });
+      setSnapshot(created);
+      setSelectedSquare(null);
+      setViewMode("live");
+      setMessage("Board ready. White to move.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to create a game.");
     }
+  }
 
+  useEffect(() => {
     void createGame();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   async function refreshArchiveList() {
@@ -221,17 +226,16 @@ export function App() {
     [archivedGame, selectedReplayPly],
   );
 
-  const replayMove = replayContext?.currentMove ?? null;
   const weaknessPatterns = weaknessSummary?.patterns ?? [];
   const selectedWeakness =
     weaknessPatterns.find((pattern) => weaknessKey(pattern) === selectedWeaknessKey) ?? weaknessPatterns[0] ?? null;
-  const studyFocusPatterns = weaknessPatterns.slice(0, 3);
-  const replayCandidates: CandidateMove[] = replayMove
-    ? replayMove.top_candidate_moves
-        .map((candidate) => parseArchivedCandidateMove(candidate))
-        .filter((candidate): candidate is CandidateMove => candidate !== null)
-        .sort((left, right) => left.rank - right.rank)
-    : [];
+  const overlays = snapshot ? candidateOverlays(snapshot) : [];
+  const checkedSquare = snapshot ? checkedKingSquare(snapshot) : null;
+  const hasReviewReady = Boolean(
+    snapshot?.archived_game_id &&
+      archivedGame?.id === snapshot.archived_game_id &&
+      archivedGame.review_report,
+  );
 
   async function openArchivedGame(gameId: string) {
     setIsArchiveLoading(true);
@@ -332,7 +336,7 @@ export function App() {
     void submitMove(selectedSquare, square.square);
   }
 
-  function handleDragStart(event: React.DragEvent<HTMLButtonElement>, square: BoardSquare) {
+  function handleDragStart(event: DragEvent<HTMLButtonElement>, square: BoardSquare) {
     if (!snapshot || isSubmitting || !isInteractivePiece(snapshot, square)) {
       event.preventDefault();
       return;
@@ -341,7 +345,7 @@ export function App() {
     setSelectedSquare(square.square);
   }
 
-  function handleDrop(event: React.DragEvent<HTMLButtonElement>, targetSquare: BoardSquare) {
+  function handleDrop(event: DragEvent<HTMLButtonElement>, targetSquare: BoardSquare) {
     event.preventDefault();
     const from = event.dataTransfer.getData("text/plain");
     if (!from || from === targetSquare.square) {
@@ -350,169 +354,97 @@ export function App() {
     void submitMove(from, targetSquare.square);
   }
 
-  if (snapshot === null) {
-    return <main className="app-shell"><section className="status-panel">{message}</section></main>;
+  function openReplayFromPly(plyIndex: number) {
+    setSelectedReplayPly(plyIndex);
+    setViewMode("archive");
   }
 
-  const selectedArchiveSummary = archivedGame
-    ? archiveList.find((item) => item.game_id === archivedGame.id) ?? null
-    : null;
+  if (snapshot === null) {
+    return <main className="loading-shell">Creating a new board...</main>;
+  }
 
   return (
-    <main className="app-shell">
-      <section className="board-panel">
-        <header className="board-header">
-          <div>
-            <p className="eyebrow">
-              {viewMode === "live" ? "Live board" : viewMode === "archive" ? "Archive replay" : "Weakness dashboard"}
-            </p>
-            <h1>
-              {viewMode === "live"
-                ? "Playable Study Board"
-                : viewMode === "archive"
-                  ? "Archived Game Replay"
-                  : "Repeated Weakness Dashboard"}
-            </h1>
-          </div>
-          <div className="header-actions">
-            <button type="button" className={`mode-chip ${viewMode === "live" ? "active" : ""}`} onClick={() => setViewMode("live")}>Live</button>
-            <button type="button" className={`mode-chip ${viewMode === "archive" ? "active" : ""}`} onClick={() => setViewMode("archive")}>Archive</button>
-            <button type="button" className={`mode-chip ${viewMode === "weakness" ? "active" : ""}`} onClick={() => setViewMode("weakness")}>Weakness</button>
-            <div className="turn-chip">
-              {viewMode === "live"
-                ? `${snapshot.status.turn} to move`
-                : viewMode === "archive"
-                  ? archivedGame
-                    ? `Ply ${selectedReplayPly}/${archivedGame.move_logs.length}`
-                    : "Select a game"
-                  : `${weaknessPatterns.length} patterns`}
+    <main className="study-shell">
+      <aside className="workspace-sidebar">
+        <section className="panel-card brand-card">
+          <p className="eyebrow">Chess Study Assistant</p>
+          <h1>Study-first chess coach</h1>
+          <p className="support-copy">
+            Play on a backend-authoritative board, get immediate feedback, and move into replay and weakness review without losing context.
+          </p>
+        </section>
+
+        <section className="panel-card">
+          <div className="panel-head compact">
+            <div>
+              <p className="eyebrow">Workspace</p>
+              <h3>{viewLabel(viewMode)}</h3>
             </div>
           </div>
-        </header>
-
-        {viewMode === "live" ? (
-          <>
-            <BoardView
-              fen={snapshot.fen}
-              lastMoveUci={snapshot.last_move_uci}
-              checkedSquare={checkedKingSquare(snapshot)}
-              overlays={candidateOverlays(snapshot)}
-              selectedSquare={selectedSquare}
-              interactive
-              disabled={isSubmitting || snapshot.status.is_game_over}
-              onSquareClick={handleSquareClick}
-              onDragStart={handleDragStart}
-              onDrop={handleDrop}
-            />
-            <section className="board-subpanel">
-              <p className="eyebrow">Live sync</p>
-              <p>Board state is only committed after backend validation and state update.</p>
-              <p>Analysis and coaching remain optional sidecar data, so failed analysis does not break play.</p>
-            </section>
-          </>
-        ) : archivedGame && replayContext ? (
-          <>
-            <BoardView
-              fen={replayContext.boardFen}
-              lastMoveUci={replayMove?.move_uci ?? null}
-              checkedSquare={null}
-              overlays={[]}
-              disabled
-            />
-            <section className="board-subpanel">
-              <div className="replay-toolbar">
-                <button type="button" onClick={() => setSelectedReplayPly(0)} disabled={selectedReplayPly === 0}>First</button>
-                <button type="button" onClick={() => setSelectedReplayPly((current) => Math.max(0, current - 1))} disabled={selectedReplayPly === 0}>Previous</button>
-                <button type="button" onClick={() => setSelectedReplayPly((current) => Math.min(archivedGame.move_logs.length, current + 1))} disabled={selectedReplayPly >= archivedGame.move_logs.length}>Next</button>
-                <button type="button" onClick={() => setSelectedReplayPly(archivedGame.move_logs.length)} disabled={selectedReplayPly >= archivedGame.move_logs.length}>Last</button>
-              </div>
-              <p>{replayMove ? `Replaying ply ${replayMove.ply_index}: ${replayMove.move_san} (${replayMove.move_uci})` : "Replay at the initial position before move 1."}</p>
-              <p>Board position: {replayContext.boardFen}</p>
-            </section>
-          </>
-        ) : viewMode === "weakness" ? (
-          <>
-            <section className="dashboard-grid">
-              {weaknessPatterns.map((pattern) => (
-                <button
-                  key={weaknessKey(pattern)}
-                  type="button"
-                  className={`dashboard-card ${selectedWeakness && weaknessKey(pattern) === weaknessKey(selectedWeakness) ? "selected" : ""}`}
-                  onClick={() => setSelectedWeaknessKey(weaknessKey(pattern))}
-                >
-                  <p className="eyebrow">{pattern.pattern_type}</p>
-                  <h2>{pattern.display_label}</h2>
-                  <p className="dashboard-number">{pattern.frequency} times</p>
-                  <p>Last seen: {formatTimestamp(pattern.last_seen_at)}</p>
-                  <p>{pattern.notes}</p>
-                </button>
-              ))}
-              {!isWeaknessLoading && weaknessPatterns.length === 0 ? (
-                <div className="dashboard-card empty-card">
-                  <p className="eyebrow">Weaknesses</p>
-                  <h2>No repeated patterns yet</h2>
-                  <p>Finish a few archived games first. Repeated themes will appear here once the rule-based tracker has enough data.</p>
-                </div>
-              ) : null}
-            </section>
-            <section className="board-subpanel">
-              <p className="eyebrow">Next focus</p>
-              <h2>What to study next</h2>
-              {studyFocusPatterns.length > 0 ? (
-                <ol className="move-list">
-                  {studyFocusPatterns.map((pattern) => (
-                    <li key={`focus-${weaknessKey(pattern)}`}>
-                      <strong>{pattern.display_label}</strong>
-                      <div>{pattern.study_recommendation}</div>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p>{isWeaknessLoading ? "Loading recommendations..." : "Recommendations will appear after repeated weakness patterns are detected."}</p>
-              )}
-            </section>
-          </>
-        ) : (
-          <section className="status-panel">
-            <p className="eyebrow">Archive replay</p>
-            <h2>Select a saved game</h2>
-            <p>Choose an archived game from the browser to replay move by move.</p>
-          </section>
-        )}
-      </section>
-
-      <aside className="side-panel">
-        <section className="status-panel">
-          <p className="eyebrow">Workspace</p>
-          <h2>
-            {viewMode === "live" ? "Current session" : viewMode === "archive" ? "Archive browser" : "Weakness study"}
-          </h2>
-          <p>{viewMode === "live" ? message : viewMode === "archive" ? archiveMessage : weaknessMessage}</p>
-          <div className="chip-row">
-            <button type="button" className="secondary-button" onClick={() => setViewMode("live")}>Open live board</button>
-            <button type="button" className="secondary-button" onClick={() => setViewMode("archive")}>Open archive browser</button>
-            <button type="button" className="secondary-button" onClick={() => setViewMode("weakness")}>Open weakness dashboard</button>
+          <div className="nav-stack">
+            <button type="button" className={`nav-button ${viewMode === "live" ? "active" : ""}`} onClick={() => setViewMode("live")}>
+              Live play
+            </button>
+            <button type="button" className={`nav-button ${viewMode === "review" ? "active" : ""}`} onClick={() => setViewMode("review")}>
+              Review
+            </button>
+            <button type="button" className={`nav-button ${viewMode === "archive" ? "active" : ""}`} onClick={() => setViewMode("archive")}>
+              Archive replay
+            </button>
+            <button type="button" className={`nav-button ${viewMode === "weakness" ? "active" : ""}`} onClick={() => setViewMode("weakness")}>
+              Weakness
+            </button>
           </div>
         </section>
 
-        <section className="status-panel">
-          <div className="section-heading">
+        <section className="panel-card">
+          <div className="panel-head compact">
+            <div>
+              <p className="eyebrow">Current state</p>
+              <h3>Live sync summary</h3>
+            </div>
+          </div>
+          <div className="info-grid compact">
+            <div>
+              <span className="muted-label">Turn</span>
+              <strong>{snapshot.status.turn}</strong>
+            </div>
+            <div>
+              <span className="muted-label">Moves</span>
+              <strong>{snapshot.move_history.length}</strong>
+            </div>
+            <div>
+              <span className="muted-label">Analysis</span>
+              <strong>{snapshot.analysis?.fen === snapshot.fen ? "Ready" : snapshot.analysis_error ? "Unavailable" : "Pending"}</strong>
+            </div>
+            <div>
+              <span className="muted-label">Review</span>
+              <strong>{hasReviewReady ? "Saved" : "Not ready"}</strong>
+            </div>
+          </div>
+          <p className="helper-note">FEN: {snapshot.fen}</p>
+        </section>
+
+        <section className="panel-card">
+          <div className="panel-head compact">
             <div>
               <p className="eyebrow">Resume</p>
-              <h2>Saved unfinished games</h2>
+              <h3>Saved unfinished games</h3>
             </div>
             <button type="button" className="secondary-button" onClick={() => void refreshInProgressList()}>
               Refresh
             </button>
           </div>
-          <p>{resumeMessage}</p>
+          <p className="helper-note">{resumeMessage}</p>
           <ol className="archive-list">
             {inProgressList.map((item) => (
               <li key={`checkpoint-${item.game_id}`}>
                 <button type="button" className="archive-card" onClick={() => void resumeGame(item.game_id)}>
-                  <strong>{item.status}</strong>
+                  <div className="archive-card-head">
+                    <strong>{item.status}</strong>
+                    <span>{item.move_count} plies</span>
+                  </div>
                   <span>{formatTimestamp(item.updated_at)}</span>
-                  <span>{item.move_count} plies</span>
                   <span>{item.user_color} perspective</span>
                   <div>{item.game_id}</div>
                 </button>
@@ -521,292 +453,78 @@ export function App() {
             {inProgressList.length === 0 ? <li>No resumable games available.</li> : null}
           </ol>
         </section>
+      </aside>
 
-        <section className="status-panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Archive list</p>
-              <h2>Saved completed games</h2>
-            </div>
-            <button type="button" className="secondary-button" onClick={() => void refreshArchiveList()}>Refresh</button>
+      <section className="content-shell">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Current view</p>
+            <h2>{viewLabel(viewMode)}</h2>
           </div>
-          <ol className="archive-list">
-            {archiveList.map((item) => (
-              <li key={item.game_id}>
-                <button
-                  type="button"
-                  className={`archive-card ${archivedGame?.id === item.game_id ? "selected" : ""}`}
-                  onClick={() => void openArchivedGame(item.game_id)}
-                  disabled={isArchiveLoading}
-                >
-                  <strong>{item.result ?? "*"}</strong>
-                  <span>{formatTimestamp(item.finished_at)}</span>
-                  <span>{item.move_count} plies</span>
-                  <span>{item.user_color} perspective</span>
-                  <div>{item.summary_preview ?? "Saved game ready for replay."}</div>
-                </button>
-              </li>
-            ))}
-            {archiveList.length === 0 ? <li>No archived games available.</li> : null}
-          </ol>
-        </section>
+          <div className="status-strip">
+            <span className="status-pill accent">{snapshot.status.turn} to move</span>
+            <span className="status-pill">{archiveList.length} archived</span>
+            <span className="status-pill">{weaknessPatterns.length} weakness patterns</span>
+          </div>
+        </header>
 
         {viewMode === "live" ? (
-          <>
-            <section className="status-panel">
-              <p className="eyebrow">State</p>
-              <h2>{message}</h2>
-              <p>FEN: {snapshot.fen}</p>
-              <p>Moves played: {snapshot.move_history.length}</p>
-              <p>Analysis position: {snapshot.analysis?.fen ?? snapshot.analysis_error?.fen ?? "Not requested yet"}</p>
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Recent moves</p>
-              <ol className="move-list">
-                {snapshot.move_history.slice(-8).map((move) => (
-                  <li key={move.ply_index}><strong>{move.ply_index}.</strong> {move.move_san} <span>{move.move_uci}</span></li>
-                ))}
-                {snapshot.move_history.length === 0 ? <li>No moves yet.</li> : null}
-              </ol>
-            </section>
-            {archivedGame?.review_report ? (
-              <section className="status-panel">
-                <p className="eyebrow">Post-game review</p>
-                <h2>Automatic review</h2>
-                <p>{archivedGame.summary_text ?? "Review generated."}</p>
-                <p>Result: {archivedGame.result ?? "*"}</p>
-                <button type="button" className="secondary-button" onClick={() => setViewMode("archive")}>Open archived replay</button>
-              </section>
-            ) : null}
-            <section className="status-panel overlay-placeholder">
-              <p className="eyebrow">Feedback</p>
-              <h2>Immediate coaching</h2>
-              {snapshot.feedback ? (
-                <>
-                  <p>Quality: <strong>{snapshot.feedback.move_quality_label}</strong></p>
-                  <p>Best move gap: {formatScoreLoss(snapshot.feedback.score_loss_centipawns)}</p>
-                  <p>Best move was {snapshot.feedback.best_move_san} ({snapshot.feedback.best_move_uci}).</p>
-                  <p>{snapshot.feedback.short_explanation}</p>
-                  <p>{snapshot.feedback.current_plan}</p>
-                </>
-              ) : snapshot.feedback_error ? (
-                <>
-                  <p>Coaching feedback unavailable.</p>
-                  <p>{snapshot.feedback_error}</p>
-                </>
-              ) : (
-                <p>Feedback will appear here after a move is accepted.</p>
-              )}
-            </section>
-            <section className="status-panel overlay-placeholder">
-              <p className="eyebrow">Analysis</p>
-              <h2>Engine details</h2>
-              {snapshot.analysis && snapshot.analysis.fen === snapshot.fen ? (
-                <>
-                  <p>Evaluation: {formatEvaluation(snapshot.analysis.evaluation)}</p>
-                  <p>Best move: {snapshot.analysis.best_move.move_san} ({snapshot.analysis.best_move.move_uci})</p>
-                  <ol className="move-list">
-                    {snapshot.analysis.top_moves.map((move) => (
-                      <li key={move.rank}>
-                        <strong>{move.rank}.</strong> {move.move_san}
-                        <span>{move.move_uci}</span>
-                        <div>PV: {move.principal_variation_san.join(" ")}</div>
-                      </li>
-                    ))}
-                  </ol>
-                </>
-              ) : snapshot.analysis_error ? (
-                <>
-                  <p>Analysis unavailable.</p>
-                  <p>{snapshot.analysis_error.message}</p>
-                </>
-              ) : (
-                <p>Analysis will appear here after a move is accepted.</p>
-              )}
-            </section>
-          </>
-        ) : viewMode === "archive" ? (
-          <>
-            <section className="status-panel">
-              <p className="eyebrow">Replay summary</p>
-              <h2>{archivedGame ? "Archived replay context" : "No game selected"}</h2>
-              {archivedGame ? (
-                <>
-                  <p>Game ID: {archivedGame.id}</p>
-                  <p>Started: {formatTimestamp(archivedGame.started_at)}</p>
-                  <p>Finished: {formatTimestamp(archivedGame.finished_at)}</p>
-                  <p>Result: {archivedGame.result ?? "*"}</p>
-                  <p>Move count: {archivedGame.move_logs.length}</p>
-                  <p>{selectedArchiveSummary?.summary_preview ?? archivedGame.summary_text ?? "Replay data loaded."}</p>
-                </>
-              ) : <p>Select an archived game to enter replay mode.</p>}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Replay moves</p>
-              <h2>Move navigation</h2>
-              {archivedGame ? (
-                <ol className="move-list replay-move-list">
-                  <li><button type="button" className={`move-jump ${selectedReplayPly === 0 ? "selected" : ""}`} onClick={() => setSelectedReplayPly(0)}>Start position</button></li>
-                  {archivedGame.move_logs.map((move) => (
-                    <li key={move.ply_index}>
-                      <button type="button" className={`move-jump ${selectedReplayPly === move.ply_index ? "selected" : ""}`} onClick={() => setSelectedReplayPly(move.ply_index)}>
-                        {move.ply_index}. {move.move_san}
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              ) : <p>No replay moves to show yet.</p>}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Replay detail</p>
-              <h2>{replayMove ? `Ply ${replayMove.ply_index}` : "Initial position"}</h2>
-              {replayMove ? (
-                <>
-                  <p>Before FEN: {replayMove.before_fen}</p>
-                  <p>After FEN: {replayMove.after_fen}</p>
-                  <p>User move: {replayMove.move_san} ({replayMove.move_uci})</p>
-                  <p>Best move: {replayMove.best_move_san && replayMove.best_move_uci ? `${replayMove.best_move_san} (${replayMove.best_move_uci})` : "Not stored"}</p>
-                  <p>Move quality: {replayMove.move_quality_label ?? "Not graded"}</p>
-                  <p>{replayMove.short_coaching_note ?? "No short coaching note stored."}</p>
-                  <p>{replayMove.current_plan ?? "No one-line plan stored."}</p>
-                </>
-              ) : (
-                <>
-                  <p>Before FEN: {archivedGame?.initial_fen ?? "Not loaded"}</p>
-                  <p>After FEN: Select a ply to inspect the resulting position.</p>
-                  <p>Replay starts from the archived initial position and steps through every stored ply.</p>
-                </>
-              )}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Candidate review</p>
-              <h2>Best alternatives at that moment</h2>
-              {replayCandidates.length > 0 ? (
-                <ol className="move-list">
-                  {replayCandidates.map((move) => (
-                    <li key={`${move.rank}-${move.move_uci}`}>
-                      <strong>{move.rank}.</strong> {move.move_san}
-                      <span>{move.move_uci}</span>
-                      <div>Score: {formatEvaluation(move.score)}</div>
-                      <div>PV: {move.principal_variation_san.join(" ") || "No PV stored"}</div>
-                    </li>
-                  ))}
-                </ol>
-              ) : <p>Select a played move to review the stored best move and top candidate moves.</p>}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Review context</p>
-              <h2>Learning notes</h2>
-              {replayContext?.reviewNotes.length ? (
-                <ol className="move-list">
-                  {replayContext.reviewNotes.map((note, index) => (
-                    <li key={`${selectedReplayPly}-${index + 1}`}>{note}</li>
-                  ))}
-                </ol>
-              ) : <p>Selected ply has no dedicated review highlight. Use the full summary below for broader themes.</p>}
-              {replayMove?.pattern_tags.length ? (
-                <div className="tag-row">
-                  {replayMove.pattern_tags.map((tag, index) => (
-                    <span key={`${tag.pattern_type}-${tag.pattern_key}-${index + 1}`} className="tag-pill">
-                      {tag.pattern_type}: {tag.pattern_key}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Game review</p>
-              <h2>Archived review summary</h2>
-              {archivedGame?.review_report ? (
-                <>
-                  <p>{archivedGame.summary_text ?? "Rule-based review generated for this completed game."}</p>
-                  <h2>Major mistakes</h2>
-                  <ol className="move-list">
-                    {archivedGame.review_report.critical_mistakes.map((item) => (
-                      <li key={`archive-mistake-${item.ply_index}`}><strong>{item.ply_index}.</strong> {item.move_san}<div>{item.note}</div></li>
-                    ))}
-                  </ol>
-                  <h2>Good moves</h2>
-                  <ol className="move-list">
-                    {archivedGame.review_report.good_moves.map((item) => (
-                      <li key={`archive-good-${item.ply_index}`}><strong>{item.ply_index}.</strong> {item.move_san}<div>{item.note}</div></li>
-                    ))}
-                  </ol>
-                  <h2>Study next</h2>
-                  <ol className="move-list">
-                    {archivedGame.review_report.study_points.map((item, index) => (
-                      <li key={`archive-study-${index + 1}`}>{item}</li>
-                    ))}
-                  </ol>
-                </>
-              ) : <p>No archived review summary available for this game.</p>}
-            </section>
-          </>
-        ) : (
-          <>
-            <section className="status-panel">
-              <p className="eyebrow">Summary</p>
-              <h2>Repeated weakness overview</h2>
-              <p>User: {activeUserId}</p>
-              <p>Patterns found: {weaknessPatterns.length}</p>
-              <p>Sorting: frequency first, then most recent occurrence.</p>
-              <button type="button" className="secondary-button" onClick={() => void refreshWeaknessSummary()} disabled={isWeaknessLoading}>
-                Refresh weakness summary
-              </button>
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Weakness detail</p>
-              <h2>{selectedWeakness ? selectedWeakness.display_label : "No weakness selected"}</h2>
-              {selectedWeakness ? (
-                <>
-                  <p>Frequency: {selectedWeakness.frequency}</p>
-                  <p>Last seen: {formatTimestamp(selectedWeakness.last_seen_at)}</p>
-                  <p>{selectedWeakness.notes}</p>
-                  <p>{selectedWeakness.study_recommendation}</p>
-                </>
-              ) : (
-                <p>{isWeaknessLoading ? "Loading weakness summary..." : "No repeated weaknesses recorded yet."}</p>
-              )}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Related games</p>
-              <h2>Replay entry points</h2>
-              {selectedWeakness?.related_game_ids.length ? (
-                <ol className="move-list">
-                  {selectedWeakness.related_game_ids.map((gameId) => {
-                    const archiveSummary = archiveList.find((item) => item.game_id === gameId);
-                    return (
-                      <li key={`weakness-game-${gameId}`}>
-                        <button type="button" className="move-jump" onClick={() => void openArchivedGame(gameId)}>
-                          {archiveSummary ? `${archiveSummary.result ?? "*"} · ${formatTimestamp(archiveSummary.finished_at)}` : gameId}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-              ) : (
-                <p>No related archived games were attached to this weakness yet.</p>
-              )}
-            </section>
-            <section className="status-panel">
-              <p className="eyebrow">Study focus</p>
-              <h2>Next to focus on</h2>
-              {studyFocusPatterns.length > 0 ? (
-                <ol className="move-list">
-                  {studyFocusPatterns.map((pattern) => (
-                    <li key={`study-${weaknessKey(pattern)}`}>
-                      <strong>{pattern.display_label}</strong>
-                      <div>{pattern.study_recommendation}</div>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p>Complete more archived games to unlock study recommendations.</p>
-              )}
-            </section>
-          </>
-        )}
-      </aside>
+          <LivePlayView
+            snapshot={snapshot}
+            message={message}
+            selectedSquare={selectedSquare}
+            overlays={overlays}
+            checkedSquare={checkedSquare}
+            isSubmitting={isSubmitting}
+            hasReviewReady={hasReviewReady}
+            formatEvaluation={formatEvaluation}
+            formatScoreLoss={formatScoreLoss}
+            onSquareClick={handleSquareClick}
+            onDragStart={handleDragStart}
+            onDrop={handleDrop}
+            onCreateGame={() => void createGame()}
+            onOpenArchive={() => setViewMode("archive")}
+            onOpenReview={() => setViewMode("review")}
+            onOpenWeakness={() => setViewMode("weakness")}
+          />
+        ) : null}
+
+        {viewMode === "review" ? (
+          <PostGameReviewView
+            archivedGame={archivedGame}
+            onReplayFromPly={openReplayFromPly}
+            onOpenArchive={() => setViewMode("archive")}
+            onOpenWeakness={() => setViewMode("weakness")}
+          />
+        ) : null}
+
+        {viewMode === "archive" ? (
+          <ArchiveReplayView
+            archivedGame={archivedGame}
+            archiveList={archiveList}
+            archiveMessage={archiveMessage}
+            isArchiveLoading={isArchiveLoading}
+            selectedReplayPly={selectedReplayPly}
+            replayContext={replayContext}
+            onSelectArchivedGame={(gameId) => void openArchivedGame(gameId)}
+            onSelectReplayPly={setSelectedReplayPly}
+            onRefreshArchiveList={() => void refreshArchiveList()}
+            onOpenReview={() => setViewMode("review")}
+          />
+        ) : null}
+
+        {viewMode === "weakness" ? (
+          <WeaknessDashboardView
+            summary={weaknessSummary}
+            selectedWeakness={selectedWeakness}
+            weaknessMessage={weaknessMessage}
+            isWeaknessLoading={isWeaknessLoading}
+            onSelectWeakness={setSelectedWeaknessKey}
+            onRefresh={() => void refreshWeaknessSummary()}
+            onOpenArchivedGame={(gameId) => void openArchivedGame(gameId)}
+          />
+        ) : null}
+      </section>
     </main>
   );
 }
