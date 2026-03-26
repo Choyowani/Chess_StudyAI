@@ -1,21 +1,8 @@
 import type { BoardSquare, CandidateOverlay, GameSnapshot, PieceColor } from "./types";
+import { ChessPieceSvg } from "./chess-pieces";
+import { boardSquareAriaLabel, uiGlossary } from "./ui-text";
 
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
-
-export const pieceGlyphs: Record<string, string> = {
-  P: "♙",
-  N: "♘",
-  B: "♗",
-  R: "♖",
-  Q: "♕",
-  K: "♔",
-  p: "♟",
-  n: "♞",
-  b: "♝",
-  r: "♜",
-  q: "♛",
-  k: "♚",
-};
 
 export function fenToBoard(fen: string): BoardSquare[] {
   const [placement] = fen.split(" ");
@@ -144,7 +131,7 @@ export function BoardView({
   const highlightedMove = lastMoveSquares(lastMoveUci);
 
   return (
-    <div className="board-grid" role="grid" aria-label="Chess board">
+    <div className="board-grid" role="grid" aria-label={uiGlossary.board.ariaLabel}>
       {board.map((square, index) => {
         const fileIndex = index % 8;
         const rankIndex = Math.floor(index / 8);
@@ -177,7 +164,7 @@ export function BoardView({
               }
             }}
             onDrop={(event) => onDrop?.(event, square)}
-            aria-label={`${square.square}${square.piece ? ` ${square.piece}` : ""}`}
+            aria-label={boardSquareAriaLabel(square.square, square.piece)}
             disabled={disabled}
           >
             {candidate.fromRank ? (
@@ -193,7 +180,7 @@ export function BoardView({
             ) : null}
             <span className="square-label file-label">{rankIndex === 7 ? square.square[0] : ""}</span>
             <span className="square-label rank-label">{fileIndex === 0 ? square.square[1] : ""}</span>
-            <span className="piece-glyph">{square.piece ? pieceGlyphs[square.piece] : ""}</span>
+            {square.piece ? <ChessPieceSvg piece={square.piece} /> : null}
           </button>
         );
       })}

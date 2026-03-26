@@ -1,9 +1,20 @@
 import type { ArchivedGame, ArchivedMoveLog, CandidateMove, EvaluationScore } from "./types";
+import { reviewContextNote } from "./ui-text";
+
+export type ReplayMomentKind = "mistake" | "good" | "turning";
+
+export type ReplayMoment = {
+  plyIndex: number;
+  kind: ReplayMomentKind;
+  moveSan: string;
+  note: string;
+};
 
 export type ReplayContext = {
   boardFen: string;
   currentMove: ArchivedMoveLog | null;
   reviewNotes: string[];
+  matchedMoments: ReplayMoment[];
 };
 
 export function parseArchivedCandidateMove(candidate: Record<string, unknown>): CandidateMove | null {
@@ -49,6 +60,7 @@ export function replayContextForPly(archivedGame: ArchivedGame | null, selectedP
       boardFen: archivedGame.initial_fen,
       currentMove: null,
       reviewNotes: [],
+      matchedMoments: [],
     };
   }
 
@@ -58,22 +70,87 @@ export function replayContextForPly(archivedGame: ArchivedGame | null, selectedP
   }
 
   const reviewNotes: string[] = [];
+  const matchedMoments: ReplayMoment[] = [];
   const report = archivedGame.review_report;
   if (report) {
     report.critical_mistakes
       .filter((item) => item.ply_index === currentMove.ply_index)
-      .forEach((item) => reviewNotes.push(`Critical mistake: ${item.note}`));
+      .forEach((item) => {
+        reviewNotes.push(reviewContextNote("mistake", item.note));
+        matchedMoments.push({
+          plyIndex: item.ply_index,
+          kind: "mistake",
+          moveSan: item.move_san,
+          note: item.note,
+        });
+      });
     report.good_moves
       .filter((item) => item.ply_index === currentMove.ply_index)
-      .forEach((item) => reviewNotes.push(`Good move: ${item.note}`));
+      .forEach((item) => {
+        reviewNotes.push(reviewContextNote("good", item.note));
+        matchedMoments.push({
+          plyIndex: item.ply_index,
+          kind: "good",
+          moveSan: item.move_san,
+          note: item.note,
+        });
+      });
     report.turning_points
       .filter((item) => item.ply_index === currentMove.ply_index)
-      .forEach((item) => reviewNotes.push(`Turning point: ${item.note}`));
+      .forEach((item) => {
+        reviewNotes.push(reviewContextNote("turning", item.note));
+        matchedMoments.push({
+          plyIndex: item.ply_index,
+          kind: "turning",
+          moveSan: item.move_san,
+          note: item.note,
+        });
+      });
   }
 
   return {
     boardFen: currentMove.after_fen,
     currentMove,
     reviewNotes,
+    matchedMoments,
   };
+}
+
+export function replayImportantMoments(archivedGame: ArchivedGame | null): ReplayMoment[] {
+  if (!archivedGame?.review_report) {
+    return [];
+  }
+
+  return [
+    ...archivedGame.review_report.critical_mistakes.map((item) => ({
+      plyIndex: item.ply_index,
+      kind: "mistake" as const,
+      moveSan: item.move_san,
+      note: item.note,
+    })),
+    ...archivedGame.review_report.good_moves.map((item) => ({
+      plyIndex: item.ply_index,
+      kind: "good" as const,
+      moveSan: item.move_san,
+      note: item.note,
+    })),
+    ...archivedGame.review_report.turning_points.map((item) => ({
+      plyIndex: item.ply_index,
+      kind: "turning" as const,
+      moveSan: item.move_san,
+      note: item.note,
+    })),
+  ].sort((left, right) => left.plyIndex - right.plyIndex);
+}
+
+export function replayMomentsByPly(archivedGame: ArchivedGame | null): Map<number, ReplayMoment[]> {
+  const grouped = new Map<number, ReplayMoment[]>();
+
+  for (const moment of replayImportantMoments(archivedGame)) {
+    const current = grouped.get(moment.plyIndex) ?? [];
+    current.push(moment);
+    grouped.set(moment.plyIndex, current);
+  }
+
+  return grouped;
 }

@@ -30,26 +30,26 @@ class WeaknessService:
     @staticmethod
     def display_label(pattern_type: str, pattern_key: str) -> str:
         if pattern_type == "tactics" and pattern_key == "missed_tactical_pattern":
-            return "Missed Tactical Chances"
+            return "전술 기회를 자주 놓침"
         if pattern_type == "king_safety" and pattern_key == "delayed_castling":
-            return "Delayed Castling"
+            return "캐슬링이 자주 늦어짐"
         if pattern_type == "development" and pattern_key == "delayed_piece_development":
-            return "Delayed Piece Development"
+            return "기물 전개가 자주 늦어짐"
         if pattern_type == "structure" and pattern_key.startswith("pawn_structure:"):
-            return "Repeated Pawn Structure Mistakes"
+            return "비슷한 폰 구조에서 실수가 반복됨"
         return pattern_key.replace("_", " ").title()
 
     @staticmethod
     def study_recommendation(pattern_type: str, pattern_key: str) -> str:
         if pattern_type == "tactics" and pattern_key == "missed_tactical_pattern":
-            return "Before every move, scan forcing moves first: checks, captures, and direct threats."
+            return "수를 두기 전에 체크, 잡기, 직접 위협 같은 강제 수를 먼저 확인하는 습관을 들여 보세요."
         if pattern_type == "king_safety" and pattern_key == "delayed_castling":
-            return "Castle earlier when the center is opening so king safety stops becoming a repeated tax."
+            return "중앙이 열리기 시작하면 캐슬링을 더 서둘러 킹 안전이 반복 약점이 되지 않게 해 보세요."
         if pattern_type == "development" and pattern_key == "delayed_piece_development":
-            return "In the opening, bring out knights and bishops before spending extra tempi on side moves."
+            return "오프닝에서는 옆쪽 수에 템포를 쓰기 전에 나이트와 비숍부터 자연스럽게 전개해 보세요."
         if pattern_type == "structure" and pattern_key.startswith("pawn_structure:"):
-            return "Review games with this pawn structure and note which files, weak squares, and breaks caused trouble."
-        return "Replay the related games and identify the repeated decision pattern before the position collapses."
+            return "이 폰 구조가 나온 대국을 다시 보면서 어떤 파일, 약한 칸, 브레이크가 문제였는지 정리해 보세요."
+        return "관련 대국을 다시 보며 포지션이 무너지기 전에 어떤 판단이 반복되었는지 찾아보세요."
 
     def detect_occurrences(self, review_entries: tuple[GameReviewEntry, ...]) -> tuple[WeaknessOccurrence, ...]:
         occurrences: list[WeaknessOccurrence] = []
@@ -76,7 +76,7 @@ class WeaknessService:
                 ply_index=entry.move_record.ply_index,
                 pattern_type="tactics",
                 pattern_key="missed_tactical_pattern",
-                note=f"Missed a forcing move when {best_san} was available.",
+                note=f"{best_san} 같은 강제 수를 볼 수 있었지만 놓친 장면입니다.",
             )
         ]
 
@@ -92,14 +92,14 @@ class WeaknessService:
         home_square = chess.E1 if board.turn == chess.WHITE else chess.E8
         if king_square != home_square:
             return []
-        if best_san not in {"O-O", "O-O-O"} and "king safety" not in entry.feedback.current_plan.lower():
+        if best_san not in {"O-O", "O-O-O"} and "킹 안전" not in entry.feedback.current_plan.lower():
             return []
         return [
             WeaknessOccurrence(
                 ply_index=entry.move_record.ply_index,
                 pattern_type="king_safety",
                 pattern_key="delayed_castling",
-                note="Castling was delayed even though king safety was the cleaner priority.",
+                note="킹 안전을 우선해야 하는 장면이었는데 캐슬링이 늦어졌습니다.",
             )
         ]
 
@@ -114,14 +114,14 @@ class WeaknessService:
         if undeveloped < 3 or entry.move_record.move_san.startswith(("N", "B")):
             return []
         best_san = entry.analysis_before.best_move.move_san
-        if not best_san.startswith(("N", "B")) and "develop" not in entry.feedback.current_plan.lower():
+        if not best_san.startswith(("N", "B")) and "전개" not in entry.feedback.current_plan.lower():
             return []
         return [
             WeaknessOccurrence(
                 ply_index=entry.move_record.ply_index,
                 pattern_type="development",
                 pattern_key="delayed_piece_development",
-                note="A developing move was available, but piece activity was delayed.",
+                note="전개 수가 가능했지만 기물 활동성을 높이는 흐름이 늦어졌습니다.",
             )
         ]
 
@@ -135,7 +135,7 @@ class WeaknessService:
                 ply_index=entry.move_record.ply_index,
                 pattern_type="structure",
                 pattern_key=WeaknessService._pawn_structure_signature(board),
-                note="Repeated mistake found in a similar pawn structure.",
+                note="비슷한 폰 구조에서 반복되는 실수가 다시 나타났습니다.",
             )
         ]
 

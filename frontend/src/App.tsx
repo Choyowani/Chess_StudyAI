@@ -8,7 +8,6 @@ import type {
   ArchivedGameSummary,
   BoardSquare,
   CandidateOverlay,
-  EvaluationScore,
   GameSnapshot,
   InProgressGameSummary,
   MoveRecord,
@@ -20,6 +19,28 @@ import { ArchiveReplayView } from "./views/ArchiveReplayView";
 import { LivePlayView } from "./views/LivePlayView";
 import { PostGameReviewView } from "./views/PostGameReviewView";
 import { WeaknessDashboardView } from "./views/WeaknessDashboardView";
+import {
+  analysisStatusLabel,
+  archiveCountLabel,
+  checkpointStatusLabel,
+  colorPerspectiveLabel,
+  drawMessage,
+  checkMessage,
+  checkmateMessage,
+  localizeBackendMessage,
+  moveAppliedMessage,
+  moveAppliedWithBestReplyMessage,
+  moveAppliedWithQualityMessage,
+  moveAppliedWithoutAnalysisMessage,
+  moveCountLabel,
+  selectionMessage,
+  uiGlossary,
+  uiStatusText,
+  turnStatusLabel,
+  translateMoveQuality,
+  viewLabel,
+  weaknessCountLabel,
+} from "./ui-text";
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`http://localhost:8000${input}`, {
@@ -36,23 +57,6 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
-}
-
-function formatEvaluation(score: EvaluationScore | null): string {
-  if (!score) {
-    return "No score";
-  }
-  if (score.mate !== null) {
-    return `Mate in ${Math.abs(score.mate)}`;
-  }
-  if (score.centipawns === null) {
-    return "No score";
-  }
-  return `${(score.centipawns / 100).toFixed(2)} pawns`;
-}
-
-function formatScoreLoss(scoreLossCentipawns: number): string {
-  return `${(scoreLossCentipawns / 100).toFixed(2)} pawns`;
 }
 
 function lastHistoryMove(snapshot: GameSnapshot): MoveRecord | null {
@@ -94,13 +98,6 @@ function sortWeaknessPatterns(patterns: WeaknessPattern[]): WeaknessPattern[] {
   });
 }
 
-function viewLabel(viewMode: ViewMode): string {
-  if (viewMode === "live") return "Live Play";
-  if (viewMode === "review") return "Post-Game Review";
-  if (viewMode === "archive") return "Archive Replay";
-  return "Weakness Dashboard";
-}
-
 export function App() {
   const activeUserId = "local-user";
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
@@ -111,25 +108,25 @@ export function App() {
   const [selectedWeaknessKey, setSelectedWeaknessKey] = useState<string | null>(null);
   const [selectedReplayPly, setSelectedReplayPly] = useState(0);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
-  const [message, setMessage] = useState("Creating a new board...");
-  const [archiveMessage, setArchiveMessage] = useState("Loading archived games...");
-  const [resumeMessage, setResumeMessage] = useState("Loading resumable games...");
-  const [weaknessMessage, setWeaknessMessage] = useState("Loading weakness summary...");
+  const [message, setMessage] = useState<string>(uiStatusText.loading.newGame);
+  const [archiveMessage, setArchiveMessage] = useState<string>(uiStatusText.loading.archiveList);
+  const [resumeMessage, setResumeMessage] = useState<string>(uiStatusText.loading.resumeList);
+  const [weaknessMessage, setWeaknessMessage] = useState<string>(uiStatusText.loading.weaknessSummary);
   const [viewMode, setViewMode] = useState<ViewMode>("live");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
   const [isWeaknessLoading, setIsWeaknessLoading] = useState(false);
 
   async function createGame() {
-    setMessage("Creating a new board...");
+    setMessage(uiStatusText.loading.newGame);
     try {
       const created = await requestJson<GameSnapshot>("/api/games", { method: "POST" });
       setSnapshot(created);
       setSelectedSquare(null);
       setViewMode("live");
-      setMessage("Board ready. White to move.");
+      setMessage(uiStatusText.success.newGameReady);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Failed to create a game.");
+      setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.createGame);
     }
   }
 
@@ -141,10 +138,10 @@ export function App() {
     try {
       const archives = await requestJson<ArchivedGameSummary[]>("/api/archive/games");
       setArchiveList(archives);
-      setArchiveMessage(archives.length > 0 ? "Archived games ready." : "No archived games yet.");
+      setArchiveMessage(archives.length > 0 ? uiStatusText.success.archiveListLoaded : uiStatusText.empty.archiveList);
     } catch (error) {
       setArchiveList([]);
-      setArchiveMessage(error instanceof Error ? error.message : "Failed to load archived games.");
+      setArchiveMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadArchiveList);
     }
   }
 
@@ -156,10 +153,10 @@ export function App() {
     try {
       const resumableGames = await requestJson<InProgressGameSummary[]>("/api/checkpoints/games");
       setInProgressList(resumableGames);
-      setResumeMessage(resumableGames.length > 0 ? "Resumable games ready." : "No unfinished games saved yet.");
+      setResumeMessage(resumableGames.length > 0 ? uiStatusText.success.resumableListLoaded : uiStatusText.empty.resumableList);
     } catch (error) {
       setInProgressList([]);
-      setResumeMessage(error instanceof Error ? error.message : "Failed to load resumable games.");
+      setResumeMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadResumeList);
     }
   }
 
@@ -179,11 +176,11 @@ export function App() {
         }
         return sorted[0] ? weaknessKey(sorted[0]) : null;
       });
-      setWeaknessMessage(sorted.length > 0 ? "Weakness summary ready." : "No repeated weakness patterns yet.");
+      setWeaknessMessage(sorted.length > 0 ? uiStatusText.success.weaknessLoaded : uiStatusText.empty.weaknessPatterns);
     } catch (error) {
       setWeaknessSummary(null);
       setSelectedWeaknessKey(null);
-      setWeaknessMessage(error instanceof Error ? error.message : "Failed to load weakness summary.");
+      setWeaknessMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadWeakness);
     } finally {
       setIsWeaknessLoading(false);
     }
@@ -239,31 +236,31 @@ export function App() {
 
   async function openArchivedGame(gameId: string) {
     setIsArchiveLoading(true);
-    setArchiveMessage("Loading archived replay...");
+    setArchiveMessage(uiStatusText.loading.openingArchive);
     try {
       const archive = await requestJson<ArchivedGame>(`/api/archive/games/${gameId}`);
       setArchivedGame(archive);
       setSelectedReplayPly(archive.move_logs.length);
       setViewMode("archive");
-      setArchiveMessage(`Loaded replay for ${gameId}.`);
+      setArchiveMessage(uiStatusText.success.archiveOpened(gameId));
     } catch (error) {
-      setArchiveMessage(error instanceof Error ? error.message : "Failed to load archived game.");
+      setArchiveMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadArchive);
     } finally {
       setIsArchiveLoading(false);
     }
   }
 
   async function resumeGame(gameId: string) {
-    setResumeMessage("Resuming saved game...");
+    setResumeMessage(uiStatusText.loading.resumingGame);
     try {
       const resumed = await requestJson<GameSnapshot>(`/api/checkpoints/games/${gameId}/resume`);
       setSnapshot(resumed);
       setSelectedSquare(null);
       setViewMode("live");
-      setMessage(`Resumed game ${gameId}. ${resumed.status.turn} to move.`);
-      setResumeMessage(`Resumed ${gameId}.`);
+      setMessage(uiStatusText.success.gameResumedWithTurn(gameId, turnStatusLabel(resumed.status.turn)));
+      setResumeMessage(uiStatusText.success.gameResumed(gameId));
     } catch (error) {
-      setResumeMessage(error instanceof Error ? error.message : "Failed to resume saved game.");
+      setResumeMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.resumeGame);
     }
   }
 
@@ -282,27 +279,25 @@ export function App() {
       setSnapshot(next);
       setSelectedSquare(null);
       if (next.status.is_checkmate) {
-        setMessage(`Checkmate. ${next.status.winner} wins.`);
+        setMessage(checkmateMessage(next.status.winner));
       } else if (next.status.is_stalemate) {
-        setMessage("Stalemate.");
+        setMessage(uiStatusText.stalemate);
       } else if (next.status.is_draw) {
-        setMessage(next.status.draw_reason ? `Draw by ${next.status.draw_reason}.` : "Draw.");
+        setMessage(drawMessage(next.status.draw_reason));
       } else if (next.status.is_check) {
-        setMessage(`${next.status.turn} is in check.`);
+        setMessage(checkMessage(turnStatusLabel(next.status.turn)));
       } else if (next.feedback) {
-        setMessage(`Move accepted: ${next.feedback.played_move_san}. ${next.feedback.move_quality_label}.`);
+        setMessage(moveAppliedWithQualityMessage(next.feedback.played_move_san, translateMoveQuality(next.feedback.move_quality_label)));
       } else if (next.analysis && next.analysis.fen === next.fen) {
-        setMessage(
-          `Move accepted: ${lastHistoryMove(next)?.move_san ?? moveUci}. Best reply: ${next.analysis.best_move.move_san}`,
-        );
+        setMessage(moveAppliedWithBestReplyMessage(lastHistoryMove(next)?.move_san ?? moveUci, next.analysis.best_move.move_san));
       } else if (next.analysis_error) {
-        setMessage(`Move accepted: ${lastHistoryMove(next)?.move_san ?? moveUci}. Analysis unavailable.`);
+        setMessage(moveAppliedWithoutAnalysisMessage(lastHistoryMove(next)?.move_san ?? moveUci));
       } else {
-        setMessage(`Move accepted: ${lastHistoryMove(next)?.move_san ?? moveUci}`);
+        setMessage(moveAppliedMessage(lastHistoryMove(next)?.move_san ?? moveUci));
       }
     } catch (error) {
       setSelectedSquare(null);
-      setMessage(error instanceof Error ? error.message : "Move failed.");
+      setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.moveFailed);
     } finally {
       setIsSubmitting(false);
     }
@@ -316,20 +311,20 @@ export function App() {
     if (selectedSquare === null) {
       if (isInteractivePiece(snapshot, square)) {
         setSelectedSquare(square.square);
-        setMessage(`Selected ${square.square}. Choose a destination.`);
+        setMessage(selectionMessage(square.square));
       }
       return;
     }
 
     if (selectedSquare === square.square) {
       setSelectedSquare(null);
-      setMessage("Selection cleared.");
+      setMessage(uiStatusText.selectionCleared);
       return;
     }
 
     if (isInteractivePiece(snapshot, square)) {
       setSelectedSquare(square.square);
-      setMessage(`Selected ${square.square}. Choose a destination.`);
+      setMessage(selectionMessage(square.square));
       return;
     }
 
@@ -360,39 +355,37 @@ export function App() {
   }
 
   if (snapshot === null) {
-    return <main className="loading-shell">Creating a new board...</main>;
+    return <main className="loading-shell">{uiStatusText.loading.newGame}</main>;
   }
 
   return (
     <main className="study-shell">
       <aside className="workspace-sidebar">
         <section className="panel-card brand-card">
-          <p className="eyebrow">Chess Study Assistant</p>
-          <h1>Study-first chess coach</h1>
-          <p className="support-copy">
-            Play on a backend-authoritative board, get immediate feedback, and move into replay and weakness review without losing context.
-          </p>
+          <p className="eyebrow">{uiGlossary.product.eyebrow}</p>
+          <h1>{uiGlossary.product.title}</h1>
+          <p className="support-copy">{uiGlossary.product.shellDescription}</p>
         </section>
 
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Workspace</p>
+              <p className="eyebrow">{uiGlossary.sections.workspace}</p>
               <h3>{viewLabel(viewMode)}</h3>
             </div>
           </div>
           <div className="nav-stack">
             <button type="button" className={`nav-button ${viewMode === "live" ? "active" : ""}`} onClick={() => setViewMode("live")}>
-              Live play
+              {uiGlossary.views.live}
             </button>
             <button type="button" className={`nav-button ${viewMode === "review" ? "active" : ""}`} onClick={() => setViewMode("review")}>
-              Review
+              {uiGlossary.views.review}
             </button>
             <button type="button" className={`nav-button ${viewMode === "archive" ? "active" : ""}`} onClick={() => setViewMode("archive")}>
-              Archive replay
+              {uiGlossary.views.archive}
             </button>
             <button type="button" className={`nav-button ${viewMode === "weakness" ? "active" : ""}`} onClick={() => setViewMode("weakness")}>
-              Weakness
+              {uiGlossary.views.weakness}
             </button>
           </div>
         </section>
@@ -400,26 +393,26 @@ export function App() {
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Current state</p>
-              <h3>Live sync summary</h3>
+              <p className="eyebrow">{uiGlossary.sections.currentStatus}</p>
+              <h3>{uiGlossary.sections.liveSyncSummary}</h3>
             </div>
           </div>
           <div className="info-grid compact">
             <div>
-              <span className="muted-label">Turn</span>
-              <strong>{snapshot.status.turn}</strong>
+              <span className="muted-label">{uiGlossary.labels.turn}</span>
+              <strong>{turnStatusLabel(snapshot.status.turn)}</strong>
             </div>
             <div>
-              <span className="muted-label">Moves</span>
+              <span className="muted-label">{uiGlossary.labels.progressMoves}</span>
               <strong>{snapshot.move_history.length}</strong>
             </div>
             <div>
-              <span className="muted-label">Analysis</span>
-              <strong>{snapshot.analysis?.fen === snapshot.fen ? "Ready" : snapshot.analysis_error ? "Unavailable" : "Pending"}</strong>
+              <span className="muted-label">{uiGlossary.labels.analysis}</span>
+              <strong>{analysisStatusLabel(snapshot.analysis?.fen === snapshot.fen, Boolean(snapshot.analysis_error))}</strong>
             </div>
             <div>
-              <span className="muted-label">Review</span>
-              <strong>{hasReviewReady ? "Saved" : "Not ready"}</strong>
+              <span className="muted-label">{uiGlossary.labels.review}</span>
+              <strong>{hasReviewReady ? uiStatusText.saved : uiStatusText.preparing}</strong>
             </div>
           </div>
           <p className="helper-note">FEN: {snapshot.fen}</p>
@@ -428,11 +421,11 @@ export function App() {
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Resume</p>
-              <h3>Saved unfinished games</h3>
+              <p className="eyebrow">{uiGlossary.sections.resume}</p>
+              <h3>{uiGlossary.sections.savedInProgressGames}</h3>
             </div>
             <button type="button" className="secondary-button" onClick={() => void refreshInProgressList()}>
-              Refresh
+              {uiGlossary.buttons.refresh}
             </button>
           </div>
           <p className="helper-note">{resumeMessage}</p>
@@ -441,16 +434,16 @@ export function App() {
               <li key={`checkpoint-${item.game_id}`}>
                 <button type="button" className="archive-card" onClick={() => void resumeGame(item.game_id)}>
                   <div className="archive-card-head">
-                    <strong>{item.status}</strong>
-                    <span>{item.move_count} plies</span>
+                    <strong>{checkpointStatusLabel(item.status)}</strong>
+                    <span>{moveCountLabel(item.move_count)}</span>
                   </div>
                   <span>{formatTimestamp(item.updated_at)}</span>
-                  <span>{item.user_color} perspective</span>
+                  <span>{colorPerspectiveLabel(item.user_color)}</span>
                   <div>{item.game_id}</div>
                 </button>
               </li>
             ))}
-            {inProgressList.length === 0 ? <li>No resumable games available.</li> : null}
+            {inProgressList.length === 0 ? <li>{uiStatusText.empty.noResumableGames}</li> : null}
           </ol>
         </section>
       </aside>
@@ -458,13 +451,13 @@ export function App() {
       <section className="content-shell">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Current view</p>
+            <p className="eyebrow">{uiGlossary.sections.currentScreen}</p>
             <h2>{viewLabel(viewMode)}</h2>
           </div>
           <div className="status-strip">
-            <span className="status-pill accent">{snapshot.status.turn} to move</span>
-            <span className="status-pill">{archiveList.length} archived</span>
-            <span className="status-pill">{weaknessPatterns.length} weakness patterns</span>
+            <span className="status-pill accent">{turnStatusLabel(snapshot.status.turn)}</span>
+            <span className="status-pill">{archiveCountLabel(archiveList.length)}</span>
+            <span className="status-pill">{weaknessCountLabel(weaknessPatterns.length)}</span>
           </div>
         </header>
 
@@ -477,8 +470,6 @@ export function App() {
             checkedSquare={checkedSquare}
             isSubmitting={isSubmitting}
             hasReviewReady={hasReviewReady}
-            formatEvaluation={formatEvaluation}
-            formatScoreLoss={formatScoreLoss}
             onSquareClick={handleSquareClick}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
@@ -510,6 +501,7 @@ export function App() {
             onSelectReplayPly={setSelectedReplayPly}
             onRefreshArchiveList={() => void refreshArchiveList()}
             onOpenReview={() => setViewMode("review")}
+            onOpenWeakness={() => setViewMode("weakness")}
           />
         ) : null}
 

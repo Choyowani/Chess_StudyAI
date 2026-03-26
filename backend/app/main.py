@@ -277,7 +277,7 @@ def apply_move(game_id: str, payload: MoveRequest) -> GameSnapshotResponse:
             user_color="white",
             initial_fen=session.game_state.initial_fen,
             final_fen=session.game_state.current_fen(),
-            summary_text="Rule-based review generated for this completed game.",
+            summary_text="이 완료 대국에 대해 규칙 기반 복기 요약이 생성되었습니다.",
             review_report=cast(ReviewService, app.state.review_service).build_report(tuple(session.review_entries)),
             move_history=session.game_state.move_history,
             review_entries=tuple(session.review_entries),

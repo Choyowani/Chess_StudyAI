@@ -49,8 +49,8 @@ class FeedbackServiceTests(unittest.TestCase):
 
         self.assertEqual(feedback.move_quality_label, "Good")
         self.assertEqual(feedback.best_move_uci, "e2e4")
-        self.assertIn("matched", feedback.short_explanation.lower())
-        self.assertTrue(feedback.current_plan.startswith("Plan:"))
+        self.assertIn("1순위 수", feedback.short_explanation)
+        self.assertTrue(feedback.current_plan.startswith("계획:"))
 
     def test_marks_large_drop_as_blunder(self) -> None:
         move_record = MoveRecord(
@@ -92,7 +92,7 @@ class FeedbackServiceTests(unittest.TestCase):
 
         self.assertEqual(feedback.move_quality_label, "Blunder")
         self.assertGreater(feedback.score_loss_centipawns, 420)
-        self.assertIn("preferred", feedback.short_explanation.lower())
+        self.assertIn("더 높게 평가", feedback.short_explanation)
 
 
 if __name__ == "__main__":

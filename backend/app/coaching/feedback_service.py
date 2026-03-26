@@ -73,16 +73,16 @@ class FeedbackService:
     @staticmethod
     def _explanation(label: MoveQualityLabel, move_record: MoveRecord, before_analysis: AnalysisResult) -> str:
         if move_record.move_uci == before_analysis.best_move.move_uci:
-            return "You matched the engine's preferred move in this position."
+            return "이 장면에서는 엔진의 1순위 수와 같은 선택이었습니다."
 
         prefix = {
-            "Good": "Your move stays close to the best line.",
-            "Playable": "Your move is usable, but there was a cleaner option.",
-            "Inaccuracy": "This move gives away some value and loosens the position.",
-            "Mistake": "This choice misses a stronger continuation and shifts the game the wrong way.",
-            "Blunder": "This move drops too much value compared with the engine's first choice.",
+            "Good": "최선의 흐름과 크게 어긋나지 않는 수였습니다.",
+            "Playable": "둘 수는 있었지만 더 깔끔한 선택이 있었습니다.",
+            "Inaccuracy": "가치를 조금 내주면서 포지션을 다소 느슨하게 만들었습니다.",
+            "Mistake": "더 강한 흐름을 놓쳐 국면의 방향이 좋지 않게 바뀌었습니다.",
+            "Blunder": "엔진의 1순위 수와 비교해 너무 많은 가치를 잃은 선택이었습니다.",
         }[label]
-        return f"{prefix} The engine preferred {before_analysis.best_move.move_san}."
+        return f"{prefix} 이 장면에서 엔진은 {before_analysis.best_move.move_san}를 더 높게 평가했습니다."
 
     def _plan_line(self, after_analysis: AnalysisResult) -> str:
         best_reply = after_analysis.best_move.move_san
@@ -91,19 +91,19 @@ class FeedbackService:
         destination = uci[2:4]
 
         if san in {"O-O", "O-O-O"}:
-            return f"Plan: prioritize king safety and coordination with {san}."
+            return f"계획: {san}로 킹 안전과 기물 연결을 먼저 챙기세요."
         if "x" in san:
-            return f"Plan: look for the active tactical idea {san} and punish loose pieces."
+            return f"계획: {san} 같은 전술 수를 먼저 확인하고 느슨한 기물을 압박하세요."
         if destination in {"d4", "e4", "d5", "e5"}:
-            return f"Plan: fight for the center with {san}."
+            return f"계획: {san}로 중앙 주도권을 다투는 흐름을 보세요."
         if san.startswith(("N", "B")):
-            return f"Plan: improve piece activity by developing with {san}."
+            return f"계획: {san}로 기물을 전개하며 활동성을 높이세요."
         if san.startswith("R"):
-            return f"Plan: activate the rook with {san} and increase pressure."
+            return f"계획: {san}로 룩을 활성화해 압박을 키우세요."
         if san.startswith("Q"):
-            return f"Plan: use {san} to increase pressure, but keep queen activity coordinated."
+            return f"계획: {san}로 압박을 늘리되 퀸이 혼자 앞서가지 않게 조율하세요."
 
         board = chess.Board(after_analysis.fen)
         if board.is_check():
-            return "Plan: respond to the check first and stabilize the king."
-        return f"Plan: the engine wants {san} as the most direct improving move."
+            return "계획: 먼저 체크에 대응하며 킹을 안정시키세요."
+        return f"계획: 엔진은 {san}를 가장 직접적인 개선 수로 보고 있습니다."

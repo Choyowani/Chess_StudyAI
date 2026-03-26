@@ -169,9 +169,9 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(len(body["analysis"]["top_moves"]), 3)
         self.assertIsNone(body["analysis_error"])
         self.assertEqual(body["feedback"]["move_quality_label"], "Good")
-        self.assertIn("matched", body["feedback"]["short_explanation"].lower())
+        self.assertIn("1순위 수", body["feedback"]["short_explanation"])
         self.assertEqual(body["feedback"]["best_move_uci"], "e2e4")
-        self.assertTrue(body["feedback"]["current_plan"].startswith("Plan:"))
+        self.assertTrue(body["feedback"]["current_plan"].startswith("계획:"))
 
     def test_analysis_failure_does_not_break_move_flow(self) -> None:
         app.state.analysis_service = FakeAnalysisService(

@@ -100,7 +100,7 @@ class ReviewService:
                             ply_index=entry.move_record.ply_index,
                             move_san=entry.move_record.move_san,
                             swing_centipawns=swing,
-                            note=f"Evaluation swung by {(swing / 100):.2f} pawns after {entry.move_record.move_san}.",
+                            note=f"{entry.move_record.move_san} 이후 평가가 {(swing / 100):.2f}폰만큼 크게 흔들렸습니다.",
                         )
                     )
             previous_eval = current_eval
@@ -111,26 +111,26 @@ class ReviewService:
         points: list[str] = []
         high_loss = [entry for entry in feedback_entries if entry.feedback.score_loss_centipawns >= 220]
         if high_loss:
-            points.append("Study point: review the moments where one move changed the evaluation sharply.")
+            points.append("학습 포인트: 한 수로 평가가 크게 흔들린 장면을 다시 보며 왜 급격히 나빠졌는지 확인해 보세요.")
 
         tactical = [
             entry
             for entry in feedback_entries
-            if "tactical" in entry.feedback.current_plan.lower() or "punish loose pieces" in entry.feedback.current_plan.lower()
+            if "전술" in entry.feedback.current_plan.lower() or "느슨한 기물" in entry.feedback.current_plan.lower()
         ]
         if tactical:
-            points.append("Study point: spend time on tactical awareness and checking forcing moves first.")
+            points.append("학습 포인트: 수를 두기 전에 체크, 잡기, 직접 위협 같은 강제 수를 먼저 보는 습관을 들여 보세요.")
 
-        center = [entry for entry in feedback_entries if "center" in entry.feedback.current_plan.lower()]
+        center = [entry for entry in feedback_entries if "중앙" in entry.feedback.current_plan.lower()]
         if center:
-            points.append("Study point: compare your move choices with central control plans in the opening.")
+            points.append("학습 포인트: 오프닝에서는 중앙 장악 계획과 내 선택이 어떻게 달랐는지 비교해 보세요.")
 
-        development = [entry for entry in feedback_entries if "develop" in entry.feedback.current_plan.lower()]
+        development = [entry for entry in feedback_entries if "전개" in entry.feedback.current_plan.lower()]
         if development:
-            points.append("Study point: focus on faster development and piece activity in similar positions.")
+            points.append("학습 포인트: 비슷한 장면에서는 더 빠른 기물 전개와 활동성 확보에 집중해 보세요.")
 
         if not points:
-            points.append("Study point: keep comparing your moves with the engine's first choice to sharpen move selection.")
+            points.append("학습 포인트: 내 수와 엔진의 1순위 수를 계속 비교하면서 수 선택 기준을 다듬어 보세요.")
 
         return tuple(points[:4])
 

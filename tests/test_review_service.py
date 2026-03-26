@@ -11,10 +11,10 @@ class ReviewServiceTests(unittest.TestCase):
     def test_builds_structured_review_report(self) -> None:
         service = ReviewService()
         entries = (
-            self._entry(1, "e4", 20, "Good", "Matched the best move.", "Plan: fight for the center with e5.", 10),
-            self._entry(2, "f3", 520, "Blunder", "This move drops too much value.", "Plan: respond to the check first and stabilize the king.", 500),
-            self._entry(3, "Nc3", 35, "Good", "Your move stays close to the best line.", "Plan: improve piece activity by developing with Nf6.", 15),
-            self._entry(4, "g4", 320, "Mistake", "This choice misses a stronger continuation.", "Plan: look for the active tactical idea Qh4# and punish loose pieces.", 450),
+            self._entry(1, "e4", 20, "Good", "이 장면에서는 엔진의 1순위 수와 같은 선택이었습니다.", "계획: e5로 중앙 주도권을 다투는 흐름을 보세요.", 10),
+            self._entry(2, "f3", 520, "Blunder", "엔진의 1순위 수와 비교해 너무 많은 가치를 잃은 선택이었습니다.", "계획: 먼저 체크에 대응하며 킹을 안정시키세요.", 500),
+            self._entry(3, "Nc3", 35, "Good", "최선의 흐름과 크게 어긋나지 않는 수였습니다.", "계획: Nf6로 기물을 전개하며 활동성을 높이세요.", 15),
+            self._entry(4, "g4", 320, "Mistake", "더 강한 흐름을 놓쳐 국면의 방향이 좋지 않게 바뀌었습니다.", "계획: Qh4# 같은 전술 수를 먼저 확인하고 느슨한 기물을 압박하세요.", 450),
         )
 
         report = service.build_report(entries)

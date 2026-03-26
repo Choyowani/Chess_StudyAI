@@ -1,6 +1,21 @@
 import type { DragEvent } from "react";
 import { BoardView } from "../board";
-import type { BoardSquare, CandidateOverlay, EvaluationScore, GameSnapshot } from "../types";
+import type { BoardSquare, CandidateOverlay, GameSnapshot } from "../types";
+import {
+  feedbackSummaryMessage,
+  formatEvaluation,
+  formatScoreLoss,
+  legalMovesCountLabel,
+  localizeBackendMessage,
+  localizeStudyText,
+  movesPlayedLabel,
+  translateMoveQuality,
+  turnStatusLabel,
+  uiGlossary,
+  uiScreenText,
+  uiStatusText,
+  liveStatusMessage,
+} from "../ui-text";
 
 type LivePlayViewProps = {
   snapshot: GameSnapshot;
@@ -10,8 +25,6 @@ type LivePlayViewProps = {
   checkedSquare: string | null;
   isSubmitting: boolean;
   hasReviewReady: boolean;
-  formatEvaluation: (score: EvaluationScore | null) => string;
-  formatScoreLoss: (scoreLossCentipawns: number) => string;
   onSquareClick: (square: BoardSquare) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
   onDrop: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
@@ -31,19 +44,6 @@ function qualityTone(label: string): string {
   return "";
 }
 
-function phaseGuidance(moveCount: number): string {
-  if (moveCount <= 2) {
-    return "Start with center control and simple development. Choose moves that claim space without creating early weaknesses.";
-  }
-  if (moveCount <= 8) {
-    return "Keep developing toward the center and look for a safe castling plan before chasing side pawns.";
-  }
-  if (moveCount <= 18) {
-    return "Coordinate pieces before forcing tactics. Ask which side has the safer king and the easier central breaks.";
-  }
-  return "Use the engine line as direction, then focus on the plan behind it: king safety, loose pieces, and active squares.";
-}
-
 export function LivePlayView({
   snapshot,
   message,
@@ -52,8 +52,6 @@ export function LivePlayView({
   checkedSquare,
   isSubmitting,
   hasReviewReady,
-  formatEvaluation,
-  formatScoreLoss,
   onSquareClick,
   onDragStart,
   onDrop,
@@ -71,18 +69,18 @@ export function LivePlayView({
       <section className="hero-panel">
         <div className="panel-head">
           <div>
-            <p className="eyebrow">Live play</p>
-            <h2>Study board</h2>
+            <p className="eyebrow">{uiGlossary.views.live}</p>
+            <h2>{uiGlossary.concepts.liveBoard}</h2>
           </div>
           <div className="toolbar-row">
             <button type="button" className="secondary-button" onClick={onCreateGame}>
-              New game
+              {uiGlossary.buttons.createGame}
             </button>
             <button type="button" className="secondary-button" onClick={onOpenArchive}>
-              Open archive
+              {uiGlossary.buttons.openSavedGames}
             </button>
             <button type="button" className="secondary-button" onClick={onOpenWeakness}>
-              Weakness dashboard
+              {uiGlossary.buttons.openWeakness}
             </button>
           </div>
         </div>
@@ -104,14 +102,14 @@ export function LivePlayView({
 
         <div className="hero-footer">
           <div className="status-strip">
-            <span className="status-pill accent">{snapshot.status.turn} to move</span>
-            <span className="status-pill">{snapshot.move_history.length} plies played</span>
-            <span className="status-pill">{snapshot.legal_moves.length} legal moves</span>
-            {snapshot.status.is_check ? <span className="status-pill warning">Check</span> : null}
+            <span className="status-pill accent">{turnStatusLabel(snapshot.status.turn)}</span>
+            <span className="status-pill">{movesPlayedLabel(snapshot.move_history.length)}</span>
+            <span className="status-pill">{legalMovesCountLabel(snapshot.legal_moves.length)}</span>
+            {snapshot.status.is_check ? <span className="status-pill warning">{uiGlossary.concepts.check}</span> : null}
           </div>
           <p className="support-copy">{message}</p>
           <div className="helper-callout">
-            <strong>Board sync rule:</strong> the board only changes after backend validation succeeds. Analysis and coaching can fail independently without breaking play.
+            <strong>동기화 원칙:</strong> {uiScreenText.live.syncPrinciple}
           </div>
         </div>
       </section>
@@ -120,41 +118,41 @@ export function LivePlayView({
         <section className="panel-card emphasis-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Immediate feedback</p>
-              <h3>What your last move did</h3>
+              <p className="eyebrow">{uiGlossary.sections.immediateFeedback}</p>
+              <h3>{uiScreenText.live.feedbackTitle}</h3>
             </div>
             {feedback ? (
               <span className={`quality-chip ${qualityTone(feedback.move_quality_label)}`}>
-                {feedback.move_quality_label}
+                {translateMoveQuality(feedback.move_quality_label)}
               </span>
             ) : null}
           </div>
           {feedback ? (
             <div className="stack-sm">
               <p className="body-strong">
-                {feedback.played_move_san} compared with best move {feedback.best_move_san}
+                {feedbackSummaryMessage(feedback.played_move_san, feedback.best_move_san)}
               </p>
-              <p>{feedback.short_explanation}</p>
+              <p>{localizeStudyText(feedback.short_explanation)}</p>
               <div className="info-grid compact">
                 <div>
-                  <span className="muted-label">Best-move gap</span>
+                  <span className="muted-label">{uiGlossary.labels.bestMoveGap}</span>
                   <strong>{formatScoreLoss(feedback.score_loss_centipawns)}</strong>
                 </div>
                 <div>
-                  <span className="muted-label">Recommended plan</span>
-                  <strong>{feedback.current_plan}</strong>
+                  <span className="muted-label">{uiGlossary.labels.nextPlan}</span>
+                  <strong>{localizeStudyText(feedback.current_plan)}</strong>
                 </div>
               </div>
             </div>
           ) : snapshot.feedback_error ? (
             <div className="empty-state-inline">
-              <strong>Feedback unavailable</strong>
-              <p>{snapshot.feedback_error}</p>
+              <strong>{uiStatusText.error.feedbackUnavailableTitle}</strong>
+              <p>{localizeBackendMessage(snapshot.feedback_error)}</p>
             </div>
           ) : (
             <div className="empty-state-inline">
-              <strong>Waiting for your move</strong>
-              <p>After a legal move is accepted, the coaching summary will appear here.</p>
+              <strong>{uiStatusText.empty.noFeedbackYetTitle}</strong>
+              <p>{uiStatusText.empty.noFeedbackYetBody}</p>
             </div>
           )}
         </section>
@@ -162,23 +160,23 @@ export function LivePlayView({
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Position guidance</p>
-              <h3>What matters now</h3>
+              <p className="eyebrow">{uiGlossary.sections.currentGuidance}</p>
+              <h3>{uiScreenText.live.guidanceTitle}</h3>
             </div>
           </div>
-          <p>{phaseGuidance(snapshot.move_history.length)}</p>
+          <p>{liveStatusMessage(snapshot.move_history.length)}</p>
           <div className="tag-row">
-            <span className="tag-pill">Last move highlight</span>
-            <span className="tag-pill">Check emphasis</span>
-            <span className="tag-pill">Top 3 overlay</span>
+            <span className="tag-pill">{uiGlossary.concepts.lastMove} 강조</span>
+            <span className="tag-pill">{uiGlossary.concepts.check} 강조</span>
+            <span className="tag-pill">상위 3개 {uiGlossary.concepts.candidateMoves}</span>
           </div>
         </section>
 
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Candidate moves</p>
-              <h3>Overlay legend</h3>
+              <p className="eyebrow">{uiGlossary.concepts.recommendedMoves}</p>
+              <h3>{uiScreenText.live.candidateOverlayTitle}</h3>
             </div>
           </div>
           {analysisReady ? (
@@ -194,17 +192,17 @@ export function LivePlayView({
                   </div>
                 ))}
               </div>
-              <p className="helper-note">Overlay markers stay pointer-free so click-to-move and drag-and-drop remain stable.</p>
+              <p className="helper-note">{uiScreenText.live.overlayHelper}</p>
             </div>
           ) : snapshot.analysis_error ? (
             <div className="empty-state-inline">
-              <strong>Analysis unavailable</strong>
-              <p>{snapshot.analysis_error.message}</p>
+              <strong>{uiStatusText.error.analysisUnavailableTitle}</strong>
+              <p>{localizeBackendMessage(snapshot.analysis_error.message)}</p>
             </div>
           ) : (
             <div className="empty-state-inline">
-              <strong>No candidates yet</strong>
-              <p>Top 3 move overlays will appear after the backend returns analysis for the new position.</p>
+              <strong>{uiScreenText.live.analysisWaitingTitle}</strong>
+              <p>{uiScreenText.live.analysisWaitingBody}</p>
             </div>
           )}
         </section>
@@ -212,19 +210,19 @@ export function LivePlayView({
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">Engine detail</p>
-              <h3>Secondary context</h3>
+              <p className="eyebrow">{uiGlossary.sections.analysisDetails}</p>
+              <h3>{uiScreenText.live.analysisDetailsTitle}</h3>
             </div>
           </div>
           {analysisReady ? (
             <div className="stack-sm">
               <div className="info-grid compact">
                 <div>
-                  <span className="muted-label">Evaluation</span>
+                  <span className="muted-label">{uiGlossary.labels.evaluation}</span>
                   <strong>{formatEvaluation(analysis.evaluation)}</strong>
                 </div>
                 <div>
-                  <span className="muted-label">Best move</span>
+                  <span className="muted-label">{uiGlossary.labels.bestMove}</span>
                   <strong>{analysis.best_move.move_san}</strong>
                 </div>
               </div>
@@ -235,35 +233,35 @@ export function LivePlayView({
                       {move.rank}. {move.move_san}
                     </strong>
                     <span>{move.move_uci}</span>
-                    <div>PV: {move.principal_variation_san.join(" ") || "No PV stored"}</div>
+                    <div>{uiGlossary.labels.representativeLine}: {move.principal_variation_san.join(" ") || uiStatusText.empty.noStoredLine}</div>
                   </li>
                 ))}
               </ol>
             </div>
           ) : (
-            <p className="helper-note">Raw engine data stays secondary. The learning flow should remain useful even when analysis is delayed or unavailable.</p>
+            <p className="helper-note">{uiScreenText.live.analysisFallback}</p>
           )}
         </section>
 
         <section className="panel-card future-card">
           <div className="panel-head compact">
             <div>
-              <p className="eyebrow">After the game</p>
-              <h3>Review handoff</h3>
+              <p className="eyebrow">{uiGlossary.sections.afterGame}</p>
+              <h3>{uiScreenText.live.reviewEntryTitle}</h3>
             </div>
           </div>
           {hasReviewReady ? (
             <div className="stack-sm">
-              <p>A saved review is ready for this finished game.</p>
+              <p>{uiStatusText.placeholder.reviewReady}</p>
               <button type="button" className="primary-button" onClick={onOpenReview}>
-                Open post-game review
+                {uiGlossary.buttons.openReview}
               </button>
             </div>
           ) : (
             <div className="stack-sm">
-              <p>When the game finishes, this area becomes the entry point to archived review and replay.</p>
+              <p>{uiStatusText.placeholder.reviewPreparing}</p>
               <button type="button" className="secondary-button" onClick={onOpenReview} disabled>
-                Review pending
+                {uiGlossary.buttons.preparingReview}
               </button>
             </div>
           )}

@@ -1,5 +1,5 @@
 :root {
-  font-family: "Inter", "Segoe UI", "SF Pro Text", sans-serif;
+  font-family: "Pretendard", "Noto Sans KR", "Inter", "Segoe UI", "SF Pro Text", sans-serif;
   color: #edf1f6;
   background:
     radial-gradient(circle at top left, rgba(76, 157, 136, 0.12), transparent 28%),
@@ -118,8 +118,7 @@ ol {
 .eyebrow,
 .muted-label {
   color: #8ca7b0;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
   font-size: 0.72rem;
 }
 
@@ -319,6 +318,24 @@ h3 {
   grid-column: 1 / span 2;
 }
 
+.weakness-overview-card {
+  grid-column: 1 / span 2;
+}
+
+.weakness-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.weakness-summary-block {
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .hero-board-wrap {
   max-width: 760px;
 }
@@ -328,6 +345,17 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.replay-important-strip {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.replay-moment-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .helper-callout {
@@ -441,8 +469,45 @@ h3 {
   box-shadow: inset 0 0 0 1px rgba(122, 224, 187, 0.28);
 }
 
+.moment-card.selected {
+  box-shadow: inset 0 0 0 1px rgba(245, 252, 255, 0.2);
+}
+
 .weakness-card {
   min-height: 210px;
+}
+
+.weakness-card-shell {
+  justify-content: space-between;
+}
+
+.weakness-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.weakness-empty-card {
+  grid-column: 1 / -1;
+}
+
+.weakness-tone-high {
+  background: rgba(216, 91, 91, 0.16);
+  border-color: rgba(216, 91, 91, 0.32);
+  color: #ffcbcb;
+}
+
+.weakness-tone-medium {
+  background: rgba(230, 185, 97, 0.16);
+  border-color: rgba(230, 185, 97, 0.3);
+  color: #ffe3ab;
+}
+
+.weakness-tone-low {
+  background: rgba(116, 184, 240, 0.16);
+  border-color: rgba(116, 184, 240, 0.3);
+  color: #d5ebff;
 }
 
 .moment-card-danger {
@@ -468,6 +533,72 @@ h3 {
 .replay-jump-list {
   max-height: 360px;
   overflow: auto;
+}
+
+.move-jump {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.move-jump.important {
+  border-color: rgba(230, 185, 97, 0.28);
+}
+
+.move-jump-head,
+.move-jump-markers,
+.archive-moment-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.move-jump-head {
+  justify-content: space-between;
+}
+
+.move-jump-subtext {
+  color: #9bb2ba;
+  font-size: 0.88rem;
+}
+
+.mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  border: 1px solid transparent;
+}
+
+.mini-pill-mistake,
+.replay-moment-pill-mistake {
+  background: rgba(216, 91, 91, 0.16);
+  border-color: rgba(216, 91, 91, 0.3);
+  color: #ffcbcb;
+}
+
+.mini-pill-good,
+.replay-moment-pill-good {
+  background: rgba(122, 224, 187, 0.14);
+  border-color: rgba(122, 224, 187, 0.3);
+  color: #cbf6e7;
+}
+
+.mini-pill-turning,
+.replay-moment-pill-turning {
+  background: rgba(230, 185, 97, 0.15);
+  border-color: rgba(230, 185, 97, 0.28);
+  color: #ffe3ab;
+}
+
+.candidate-review-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .empty-screen {
@@ -536,16 +667,16 @@ h3 {
 
 .board-square.light {
   background: #d9d9c0;
-  color: #152026;
 }
 
 .board-square.dark {
   background: #4e7a68;
-  color: #f8fffc;
 }
 
 .board-square.selected {
-  box-shadow: inset 0 0 0 4px rgba(122, 224, 187, 0.9);
+  box-shadow:
+    inset 0 0 0 4px rgba(122, 224, 187, 0.92),
+    inset 0 0 0 8px rgba(7, 16, 21, 0.22);
 }
 
 .board-square.last-move {
@@ -555,19 +686,59 @@ h3 {
 }
 
 .board-square.check-square {
-  box-shadow: inset 0 0 0 4px rgba(222, 113, 104, 0.96);
+  box-shadow:
+    inset 0 0 0 4px rgba(222, 113, 104, 0.96),
+    inset 0 0 0 8px rgba(71, 20, 20, 0.18);
 }
 
 .board-square:disabled {
   cursor: not-allowed;
 }
 
-.piece-glyph {
+.piece-shell {
   position: relative;
-  z-index: 4;
-  font-size: clamp(1.8rem, 4vw, 3.15rem);
-  line-height: 1;
+  z-index: 5;
   user-select: none;
+  width: 72%;
+  height: 72%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 4px 8px rgba(4, 10, 13, 0.22));
+}
+
+.piece-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.piece-svg-white {
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.08))
+    drop-shadow(0 2px 0 rgba(10, 20, 27, 0.44));
+}
+
+.piece-svg-black {
+  filter:
+    drop-shadow(0 1px 0 rgba(250, 253, 255, 0.08))
+    drop-shadow(0 2px 0 rgba(4, 10, 13, 0.24));
+}
+
+.board-square.selected .piece-shell {
+  transform: scale(1.015);
+}
+
+.board-square:active .piece-shell {
+  transform: scale(0.985);
+}
+
+.board-square.dark .piece-shell {
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.28));
+}
+
+.board-square.light .piece-shell {
+  filter: drop-shadow(0 4px 8px rgba(9, 18, 23, 0.18));
 }
 
 .candidate-origin,
@@ -578,15 +749,15 @@ h3 {
 }
 
 .candidate-origin {
-  inset: 12%;
+  inset: 14%;
   border-radius: 50%;
   border: 3px solid transparent;
   z-index: 1;
 }
 
 .candidate-target {
-  width: 28%;
-  height: 28%;
+  width: 24%;
+  height: 24%;
   border-radius: 999px;
   top: 50%;
   left: 50%;
@@ -657,8 +828,16 @@ h3 {
   position: absolute;
   font-size: 0.74rem;
   font-weight: 700;
-  opacity: 0.72;
+  opacity: 0.78;
   z-index: 4;
+}
+
+.board-square.light .square-label {
+  color: rgba(20, 30, 36, 0.72);
+}
+
+.board-square.dark .square-label {
+  color: rgba(245, 252, 255, 0.74);
 }
 
 .file-label {
@@ -693,6 +872,14 @@ h3 {
 
   .weakness-card-grid {
     grid-column: auto;
+  }
+
+  .weakness-overview-card {
+    grid-column: auto;
+  }
+
+  .weakness-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 
