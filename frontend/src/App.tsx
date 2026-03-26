@@ -8,6 +8,7 @@ import type {
   ArchivedGameSummary,
   BoardSquare,
   CandidateOverlay,
+  ColorName,
   GameSnapshot,
   InProgressGameSummary,
   MoveRecord,
@@ -100,6 +101,13 @@ function sortWeaknessPatterns(patterns: WeaknessPattern[]): WeaknessPattern[] {
 
 export function App() {
   const activeUserId = "local-user";
+  const [studyPerspective, setStudyPerspective] = useState<ColorName>(() => {
+    if (typeof window === "undefined") {
+      return "white";
+    }
+    const stored = window.sessionStorage.getItem("studyPerspective");
+    return stored === "black" ? "black" : "white";
+  });
   const [snapshot, setSnapshot] = useState<GameSnapshot | null>(null);
   const [archivedGame, setArchivedGame] = useState<ArchivedGame | null>(null);
   const [archiveList, setArchiveList] = useState<ArchivedGameSummary[]>([]);
@@ -116,6 +124,13 @@ export function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
   const [isWeaknessLoading, setIsWeaknessLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.sessionStorage.setItem("studyPerspective", studyPerspective);
+  }, [studyPerspective]);
 
   async function createGame() {
     setMessage(uiStatusText.loading.newGame);
@@ -364,7 +379,7 @@ export function App() {
         <section className="panel-card brand-card">
           <p className="eyebrow">{uiGlossary.product.eyebrow}</p>
           <h1>{uiGlossary.product.title}</h1>
-          <p className="support-copy">{uiGlossary.product.shellDescription}</p>
+          <p className="support-copy compact-copy">{uiGlossary.product.shellDescription}</p>
         </section>
 
         <section className="panel-card">
@@ -390,13 +405,17 @@ export function App() {
           </div>
         </section>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.currentStatus}</p>
               <h3>{uiGlossary.sections.liveSyncSummary}</h3>
             </div>
-          </div>
+            <div className="status-strip">
+              <span className="status-pill accent">{turnStatusLabel(snapshot.status.turn)}</span>
+              <span className="status-pill">{snapshot.move_history.length}수</span>
+            </div>
+          </summary>
           <div className="info-grid compact">
             <div>
               <span className="muted-label">{uiGlossary.labels.turn}</span>
@@ -415,37 +434,38 @@ export function App() {
               <strong>{hasReviewReady ? uiStatusText.saved : uiStatusText.preparing}</strong>
             </div>
           </div>
-          <p className="helper-note">FEN: {snapshot.fen}</p>
-        </section>
+          <p className="helper-note subtle-note">FEN: {snapshot.fen}</p>
+        </details>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.resume}</p>
               <h3>{uiGlossary.sections.savedInProgressGames}</h3>
             </div>
+            <span className="status-pill">{inProgressList.length}개</span>
+          </summary>
+          <div className="panel-head compact">
+            <p className="helper-note">{resumeMessage}</p>
             <button type="button" className="secondary-button" onClick={() => void refreshInProgressList()}>
               {uiGlossary.buttons.refresh}
             </button>
           </div>
-          <p className="helper-note">{resumeMessage}</p>
-          <ol className="archive-list">
+          <ol className="archive-list compact-list">
             {inProgressList.map((item) => (
               <li key={`checkpoint-${item.game_id}`}>
-                <button type="button" className="archive-card" onClick={() => void resumeGame(item.game_id)}>
+                <button type="button" className="archive-card compact-card" onClick={() => void resumeGame(item.game_id)}>
                   <div className="archive-card-head">
                     <strong>{checkpointStatusLabel(item.status)}</strong>
                     <span>{moveCountLabel(item.move_count)}</span>
                   </div>
                   <span>{formatTimestamp(item.updated_at)}</span>
-                  <span>{colorPerspectiveLabel(item.user_color)}</span>
-                  <div>{item.game_id}</div>
                 </button>
               </li>
             ))}
             {inProgressList.length === 0 ? <li>{uiStatusText.empty.noResumableGames}</li> : null}
           </ol>
-        </section>
+        </details>
       </aside>
 
       <section className="content-shell">
@@ -468,8 +488,10 @@ export function App() {
             selectedSquare={selectedSquare}
             overlays={overlays}
             checkedSquare={checkedSquare}
+            studyPerspective={studyPerspective}
             isSubmitting={isSubmitting}
             hasReviewReady={hasReviewReady}
+            onStudyPerspectiveChange={setStudyPerspective}
             onSquareClick={handleSquareClick}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
@@ -483,6 +505,8 @@ export function App() {
         {viewMode === "review" ? (
           <PostGameReviewView
             archivedGame={archivedGame}
+            studyPerspective={studyPerspective}
+            onStudyPerspectiveChange={setStudyPerspective}
             onReplayFromPly={openReplayFromPly}
             onOpenArchive={() => setViewMode("archive")}
             onOpenWeakness={() => setViewMode("weakness")}
@@ -497,6 +521,8 @@ export function App() {
             isArchiveLoading={isArchiveLoading}
             selectedReplayPly={selectedReplayPly}
             replayContext={replayContext}
+            studyPerspective={studyPerspective}
+            onStudyPerspectiveChange={setStudyPerspective}
             onSelectArchivedGame={(gameId) => void openArchivedGame(gameId)}
             onSelectReplayPly={setSelectedReplayPly}
             onRefreshArchiveList={() => void refreshArchiveList()}

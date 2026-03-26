@@ -109,10 +109,59 @@ ol {
   align-items: center;
 }
 
+.panel-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-panel[open] .panel-summary {
+  margin-bottom: 14px;
+}
+
 .toolbar-row,
 .status-strip {
   align-items: center;
   flex-wrap: wrap;
+}
+
+.perspective-toggle-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.perspective-toggle {
+  border: 1px solid rgba(133, 167, 179, 0.18);
+  border-radius: 16px;
+  background: rgba(22, 33, 40, 0.86);
+  color: inherit;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.perspective-toggle:hover {
+  background: rgba(29, 43, 51, 0.96);
+  border-color: rgba(133, 167, 179, 0.3);
+}
+
+.perspective-toggle.active {
+  background: linear-gradient(180deg, rgba(122, 224, 187, 0.22), rgba(69, 123, 101, 0.18));
+  border-color: rgba(122, 224, 187, 0.58);
+  color: #dffaf1;
+  box-shadow: inset 0 0 0 1px rgba(122, 224, 187, 0.18);
 }
 
 .eyebrow,
@@ -153,6 +202,11 @@ h3 {
   font-size: 0.95rem;
 }
 
+.subtle-note {
+  color: #95abb2;
+  font-size: 0.9rem;
+}
+
 .body-strong {
   font-size: 1.03rem;
   font-weight: 600;
@@ -168,6 +222,38 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.compact-copy {
+  max-width: 56ch;
+}
+
+.compact-list {
+  gap: 8px;
+}
+
+.compact-card {
+  gap: 6px;
+  padding: 12px;
+}
+
+.compact-detail-list {
+  gap: 8px;
+}
+
+.line-clamp-2,
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  -webkit-line-clamp: 3;
 }
 
 .nav-button,
@@ -365,6 +451,12 @@ h3 {
   border: 1px solid rgba(133, 167, 179, 0.14);
   line-height: 1.6;
   color: #bed1d8;
+}
+
+.subtle-callout {
+  background: rgba(17, 25, 31, 0.72);
+  border-color: rgba(133, 167, 179, 0.1);
+  color: #a7bcc4;
 }
 
 .info-grid {
@@ -599,6 +691,20 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.details-block {
+  border-top: 1px solid rgba(133, 167, 179, 0.1);
+  padding-top: 10px;
+}
+
+.details-block > summary {
+  cursor: pointer;
+  color: #b9cad0;
+}
+
+.details-body {
+  margin-top: 12px;
 }
 
 .empty-screen {

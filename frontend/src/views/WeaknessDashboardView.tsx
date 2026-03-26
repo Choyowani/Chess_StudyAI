@@ -62,11 +62,9 @@ export function WeaknessDashboardView({
             {uiGlossary.buttons.refresh}
           </button>
         </div>
-        <p className="support-copy">{weaknessMessage}</p>
-        <p className="helper-note">{uiScreenText.weakness.cardHelper}</p>
+        <p className="helper-note subtle-note">{weaknessMessage}</p>
         <div className="status-strip">
           <span className="status-pill">{patternCountLabel(patterns.length)}</span>
-          <span className="status-pill">{summary?.user_id ?? "local-user"}</span>
         </div>
 
         <div className="weakness-summary-grid">
@@ -76,7 +74,7 @@ export function WeaknessDashboardView({
             {topPriorityPattern ? (
               <>
                 <h3>{weaknessDisplayLabel(topPriorityPattern.display_label)}</h3>
-                <p>{localizeStudyText(topPriorityPattern.notes)}</p>
+                <p className="line-clamp-3">{localizeStudyText(topPriorityPattern.notes)}</p>
                 <div className="status-strip">
                   <span className={`status-pill weakness-tone-${weaknessPriorityTone(topPriorityPattern.frequency)}`}>
                     {weaknessPriorityLabel(topPriorityPattern.frequency)}
@@ -112,7 +110,7 @@ export function WeaknessDashboardView({
             {immediateActionPattern ? (
               <>
                 <h3>{weaknessDisplayLabel(immediateActionPattern.display_label)}</h3>
-                <p>{localizeStudyText(immediateActionPattern.study_recommendation)}</p>
+                <p className="line-clamp-3">{localizeStudyText(immediateActionPattern.study_recommendation)}</p>
                 {immediateActionPattern.related_game_ids[0] ? (
                   <button
                     type="button"
@@ -143,14 +141,10 @@ export function WeaknessDashboardView({
               </span>
             </div>
             <h3>{weaknessDisplayLabel(pattern.display_label)}</h3>
-            <p>{localizeStudyText(pattern.notes)}</p>
+            <p className="line-clamp-3">{localizeStudyText(pattern.notes)}</p>
             <div className="status-strip">
               <span className="status-pill">{uiGlossary.labels.frequency} {frequencyLabel(pattern.frequency)}</span>
               <span className="status-pill">{weaknessRecencyLabel(pattern.last_seen_at)}</span>
-            </div>
-            <div className="status-strip">
-              <span className="muted-label">{uiGlossary.labels.recentSeen} {new Date(pattern.last_seen_at).toLocaleString()}</span>
-              <span className="muted-label">{uiGlossary.labels.availableExample} {weaknessReplayAvailabilityLabel(pattern.related_game_ids.length)}</span>
             </div>
             <div className="weakness-card-actions">
               <button
@@ -190,11 +184,11 @@ export function WeaknessDashboardView({
             </div>
           </div>
           {studyFocusPatterns.length > 0 ? (
-            <ol className="detail-list">
+            <ol className="detail-list compact-detail-list">
               {studyFocusPatterns.map((pattern) => (
                 <li key={`focus-${weaknessKey(pattern)}`}>
                   <strong>{weaknessDisplayLabel(pattern.display_label)}</strong>
-                  <div>{localizeStudyText(pattern.study_recommendation)}</div>
+                  <div className="line-clamp-2">{localizeStudyText(pattern.study_recommendation)}</div>
                 </li>
               ))}
             </ol>
@@ -203,13 +197,18 @@ export function WeaknessDashboardView({
           )}
         </section>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.selectedPattern}</p>
               <h3>{uiScreenText.weakness.selectedPatternTitle}</h3>
             </div>
-          </div>
+            {selectedWeakness ? (
+              <span className={`status-pill weakness-tone-${weaknessPriorityTone(selectedWeakness.frequency)}`}>
+                {weaknessPriorityLabel(selectedWeakness.frequency)}
+              </span>
+            ) : null}
+          </summary>
           {selectedWeakness ? (
             <div className="stack-sm">
               <p><strong>{weaknessDisplayLabel(selectedWeakness.display_label)}</strong></p>
@@ -232,20 +231,18 @@ export function WeaknessDashboardView({
           ) : (
             <p className="helper-note">{uiStatusText.empty.noSelectedPattern}</p>
           )}
-        </section>
+        </details>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.relatedGames}</p>
               <h3>{uiScreenText.weakness.replayBridgeTitle}</h3>
             </div>
-          </div>
+            <span className="status-pill">{selectedWeakness?.related_game_ids.length ?? 0}개</span>
+          </summary>
           {selectedWeakness?.related_game_ids.length ? (
             <div className="stack-sm">
-              <p className="helper-note">
-                {weaknessDisplayLabel(selectedWeakness.display_label)}이(가) 실제로 나타난 대국으로 바로 이동할 수 있습니다.
-              </p>
               {selectedWeakness.related_game_ids.map((gameId) => (
                 <button
                   key={`related-${gameId}`}
@@ -260,17 +257,17 @@ export function WeaknessDashboardView({
           ) : (
             <p className="helper-note">{uiStatusText.empty.noLinkedArchives}</p>
           )}
-        </section>
+        </details>
 
-        <section className="panel-card future-card">
-          <div className="panel-head compact">
+        <details className="panel-card future-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.futureTools}</p>
               <h3>{uiScreenText.weakness.futureToolsTitle}</h3>
             </div>
-          </div>
+          </summary>
           <p>{uiGlossary.placeholder.futureTools}</p>
-        </section>
+        </details>
       </aside>
     </div>
   );

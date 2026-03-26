@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.analysis.engine_service import AnalysisFailure, AnalysisResult, EngineAnalysisService
+from backend.app.config import EngineSettings
 from backend.app.coaching.feedback_service import FeedbackService, MoveFeedback
 from backend.app.coaching.review_service import ReviewService
 from backend.app.coaching.weakness_service import UserWeaknessSummaryItem, WeaknessService
@@ -37,12 +38,18 @@ app.add_middleware(
 )
 
 store = GameSessionStore()
-app.state.analysis_service = EngineAnalysisService()
+app.state.engine_settings = EngineSettings.from_env()
+app.state.analysis_service = EngineAnalysisService(settings=app.state.engine_settings)
 app.state.feedback_service = FeedbackService()
 app.state.review_service = ReviewService()
 app.state.weakness_service = WeaknessService()
 app.state.archive_repository = SqliteGameArchiveRepository()
 app.state.checkpoint_repository = SqliteGameCheckpointRepository()
+
+
+@app.on_event("shutdown")
+def shutdown_services() -> None:
+    cast(EngineAnalysisService, app.state.analysis_service).close()
 
 
 def _analysis_payload(fen: str) -> tuple[dict[str, object] | None, dict[str, str] | None]:

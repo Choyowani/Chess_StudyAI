@@ -1,13 +1,19 @@
 import { BoardView } from "../board";
 import { parseArchivedCandidateMove, replayImportantMoments, replayMomentsByPly, type ReplayMoment } from "../archive";
-import type { ArchivedGame, ArchivedGameSummary, CandidateMove } from "../types";
+import type { ArchivedGame, ArchivedGameSummary, CandidateMove, ColorName } from "../types";
 import {
   archiveResultLabel,
   colorPerspectiveLabel,
   localizeStudyText,
   moveCountLabel,
+  replayMoveStudyLead,
+  replayPerspectiveStatusLabel,
+  replayPerspectiveSummary,
+  replayPlanLead,
   replayProgressLabel,
+  replayReviewNotesLead,
   reviewContextChipLabel,
+  studyPerspectiveOptionLabel,
   uiGlossary,
   uiScreenText,
   uiStatusText,
@@ -29,6 +35,8 @@ type ArchiveReplayViewProps = {
   isArchiveLoading: boolean;
   selectedReplayPly: number;
   replayContext: ReplayMoveContext;
+  studyPerspective: ColorName;
+  onStudyPerspectiveChange: (value: ColorName) => void;
   onSelectArchivedGame: (gameId: string) => void;
   onSelectReplayPly: (ply: number) => void;
   onRefreshArchiveList: () => void;
@@ -43,6 +51,8 @@ export function ArchiveReplayView({
   isArchiveLoading,
   selectedReplayPly,
   replayContext,
+  studyPerspective,
+  onStudyPerspectiveChange,
   onSelectArchivedGame,
   onSelectReplayPly,
   onRefreshArchiveList,
@@ -60,6 +70,11 @@ export function ArchiveReplayView({
     : [];
   const reviewReport = archivedGame?.review_report ?? null;
   const currentMomentKinds = replayContext?.matchedMoments ?? [];
+  const replayTurnAfterMove: ColorName | null = replayMove
+    ? replayMove.side_to_move_before === "white"
+      ? "black"
+      : "white"
+    : null;
 
   return (
     <div className="content-grid content-grid-archive">
@@ -73,13 +88,13 @@ export function ArchiveReplayView({
             {uiGlossary.buttons.refresh}
           </button>
         </div>
-        <p className="support-copy">{archiveMessage}</p>
-        <ol className="archive-list">
+        <p className="helper-note subtle-note">{archiveMessage}</p>
+        <ol className="archive-list compact-list">
           {archiveList.map((item) => (
             <li key={item.game_id}>
               <button
                 type="button"
-                className={`archive-card ${archivedGame?.id === item.game_id ? "selected" : ""}`}
+                className={`archive-card compact-card ${archivedGame?.id === item.game_id ? "selected" : ""}`}
                 onClick={() => onSelectArchivedGame(item.game_id)}
                 disabled={isArchiveLoading}
               >
@@ -87,9 +102,8 @@ export function ArchiveReplayView({
                   <strong>{archiveResultLabel(item.result)}</strong>
                   <span>{moveCountLabel(item.move_count)}</span>
                 </div>
-                <span>{new Date(item.finished_at).toLocaleString()}</span>
-                <span>{colorPerspectiveLabel(item.user_color)}</span>
-                <div>{item.summary_preview ? localizeStudyText(item.summary_preview) : uiStatusText.empty.replayReadySummary}</div>
+                <span>{new Date(item.finished_at).toLocaleDateString()}</span>
+                <div className="line-clamp-2">{item.summary_preview ? localizeStudyText(item.summary_preview) : uiStatusText.empty.replayReadySummary}</div>
               </button>
             </li>
           ))}
@@ -154,7 +168,7 @@ export function ArchiveReplayView({
                         <span>{moment.plyIndex}수째</span>
                       </div>
                       <strong>{moment.moveSan}</strong>
-                      <p>{localizeStudyText(moment.note)}</p>
+                      <p className="line-clamp-2">{localizeStudyText(moment.note)}</p>
                     </button>
                   ))}
                 </div>
@@ -168,6 +182,7 @@ export function ArchiveReplayView({
                 <span className="status-pill">{replayProgressLabel(selectedReplayPly, archivedGame.move_logs.length)}</span>
                 <span className="status-pill">{archiveResultLabel(archivedGame.result)}</span>
                 <span className="status-pill">{colorPerspectiveLabel(archivedGame.user_color)}</span>
+                <span className="status-pill accent">{replayPerspectiveStatusLabel(studyPerspective)}</span>
                 {currentMomentKinds.map((moment) => (
                   <span key={`${moment.kind}-${moment.plyIndex}`} className={`status-pill replay-moment-pill replay-moment-pill-${moment.kind}`}>
                     {reviewContextChipLabel(moment.kind)}
@@ -176,7 +191,7 @@ export function ArchiveReplayView({
               </div>
               <p className="support-copy">
                 {replayMove
-                  ? uiScreenText.archive.replaySyncedBody
+                  ? `${uiScreenText.archive.replaySyncedBody} ${replayPerspectiveSummary(studyPerspective, replayTurnAfterMove ?? "white")}`
                   : uiScreenText.archive.replayStartBody}
               </p>
             </div>
@@ -205,7 +220,19 @@ export function ArchiveReplayView({
               ) : null}
             </div>
           </div>
-          <p className="helper-note">{uiScreenText.archive.moveListHelper}</p>
+          <div className="perspective-toggle-group" role="group" aria-label={uiGlossary.sections.replayPerspective}>
+            {(["white", "black"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`perspective-toggle ${studyPerspective === option ? "active" : ""}`}
+                onClick={() => onStudyPerspectiveChange(option)}
+              >
+                {studyPerspectiveOptionLabel(option)}
+              </button>
+            ))}
+          </div>
+          <p className="helper-note subtle-note">{uiScreenText.archive.moveListHelper}</p>
           {archivedGame ? (
             <ol className="replay-jump-list">
               <li>
@@ -260,6 +287,10 @@ export function ArchiveReplayView({
           </div>
           {replayMove ? (
             <div className="stack-sm">
+              <div className="helper-callout subtle-callout">
+                <strong>{uiGlossary.sections.replayPerspective}</strong>
+                <p>{replayMoveStudyLead(studyPerspective, replayMove.side_to_move_before)}</p>
+              </div>
               <div className="status-strip">
                 <span className={`quality-chip ${replayMove.move_quality_label ? `quality-${replayMove.move_quality_label.toLowerCase()}` : ""}`}>
                   {replayMove.move_quality_label ? translateMoveQuality(replayMove.move_quality_label) : "평가 없음"}
@@ -273,6 +304,7 @@ export function ArchiveReplayView({
               </div>
               <div className="helper-callout">
                 <strong>{uiGlossary.sections.whyItMatters}</strong>
+                <p>{replayReviewNotesLead(studyPerspective, replayMove.side_to_move_before)}</p>
                 {replayContext?.reviewNotes.length ? (
                   <ol className="detail-list">
                     {replayContext.reviewNotes.map((note, index) => (
@@ -285,42 +317,49 @@ export function ArchiveReplayView({
               </div>
               <div className="helper-callout">
                 <strong>{uiGlossary.sections.nextToStudy}</strong>
+                <p>{replayPlanLead(studyPerspective, replayMove.side_to_move_before)}</p>
                 <p>{replayMove.current_plan ? localizeStudyText(replayMove.current_plan) : uiStatusText.empty.noStoredPlan}</p>
               </div>
-              <div className="info-grid compact">
-                <div>
-                  <span className="muted-label">{uiGlossary.labels.beforeFen}</span>
-                  <strong className="mono-text">{replayMove.before_fen}</strong>
+              <details className="details-block">
+                <summary>세부 기록 보기</summary>
+                <div className="details-body stack-sm">
+                  <div className="info-grid compact">
+                    <div>
+                      <span className="muted-label">{uiGlossary.labels.beforeFen}</span>
+                      <strong className="mono-text">{replayMove.before_fen}</strong>
+                    </div>
+                    <div>
+                      <span className="muted-label">{uiGlossary.labels.afterFen}</span>
+                      <strong className="mono-text">{replayMove.after_fen}</strong>
+                    </div>
+                  </div>
+                  <p><strong>{uiGlossary.labels.userMove}:</strong> {replayMove.move_san} ({replayMove.move_uci})</p>
+                  <p><strong>{uiGlossary.labels.bestMove}:</strong> {replayMove.best_move_san && replayMove.best_move_uci ? `${replayMove.best_move_san} (${replayMove.best_move_uci})` : uiStatusText.empty.noStoredInfo}</p>
+                  {replayMove.pattern_tags.length ? (
+                    <div className="tag-row">
+                      {replayMove.pattern_tags.map((tag, index) => (
+                        <span key={`${tag.pattern_type}-${tag.pattern_key}-${index + 1}`} className="tag-pill">
+                          {weaknessTagLabel(tag.pattern_type, tag.pattern_key)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                <div>
-                  <span className="muted-label">{uiGlossary.labels.afterFen}</span>
-                  <strong className="mono-text">{replayMove.after_fen}</strong>
-                </div>
-              </div>
-              <p><strong>{uiGlossary.labels.userMove}:</strong> {replayMove.move_san} ({replayMove.move_uci})</p>
-              <p><strong>{uiGlossary.labels.bestMove}:</strong> {replayMove.best_move_san && replayMove.best_move_uci ? `${replayMove.best_move_san} (${replayMove.best_move_uci})` : uiStatusText.empty.noStoredInfo}</p>
-              {replayMove.pattern_tags.length ? (
-                <div className="tag-row">
-                  {replayMove.pattern_tags.map((tag, index) => (
-                    <span key={`${tag.pattern_type}-${tag.pattern_key}-${index + 1}`} className="tag-pill">
-                      {weaknessTagLabel(tag.pattern_type, tag.pattern_key)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+              </details>
             </div>
           ) : (
             <p className="helper-note">{uiStatusText.empty.noSelectedMove}</p>
           )}
         </section>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.concepts.candidateMoves} 복기</p>
               <h3>{uiScreenText.archive.candidateReviewTitle}</h3>
             </div>
-          </div>
+            <span className="status-pill">{replayCandidates.length}개</span>
+          </summary>
           {replayCandidates.length > 0 ? (
             <ol className="detail-list">
               {replayCandidates.map((move) => (
@@ -329,36 +368,40 @@ export function ArchiveReplayView({
                     <span className={`candidate-rank rank-${move.rank}`}>{move.rank}</span>
                     <strong>{move.move_san}</strong>
                   </div>
-                  <span>{move.move_uci}</span>
-                  <div>{uiGlossary.labels.representativeLine}: {move.principal_variation_san.join(" ") || uiStatusText.empty.noStoredLine}</div>
+                  <div>{uiGlossary.labels.representativeLine}: {move.principal_variation_san.slice(0, 4).join(" ") || uiStatusText.empty.noStoredLine}</div>
                 </li>
               ))}
             </ol>
           ) : (
             <p className="helper-note">{uiStatusText.empty.noStoredCandidates}</p>
           )}
-        </section>
+        </details>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.concepts.nextStudyFocus}</p>
               <h3>{uiScreenText.archive.studyFocusTitle}</h3>
             </div>
-            <button type="button" className="secondary-button" onClick={onOpenWeakness}>
-              {uiGlossary.buttons.openWeaknessFromReplay}
-            </button>
-          </div>
+            <span className="status-pill">
+              {reviewReport?.study_points.length ?? 0}개
+            </span>
+          </summary>
           {reviewReport?.study_points.length ? (
-            <ol className="detail-list">
-              {reviewReport.study_points.map((point, index) => (
-                <li key={`study-point-${index + 1}`}>{localizeStudyText(point)}</li>
-              ))}
-            </ol>
+            <div className="stack-sm">
+              <ol className="detail-list compact-detail-list">
+                {reviewReport.study_points.map((point, index) => (
+                  <li key={`study-point-${index + 1}`}>{localizeStudyText(point)}</li>
+                ))}
+              </ol>
+              <button type="button" className="secondary-button" onClick={onOpenWeakness}>
+                {uiGlossary.buttons.openWeaknessFromReplay}
+              </button>
+            </div>
           ) : (
             <p className="helper-note">{uiStatusText.empty.noStudyFocus}</p>
           )}
-        </section>
+        </details>
       </aside>
     </div>
   );

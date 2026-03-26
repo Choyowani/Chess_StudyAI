@@ -22,6 +22,7 @@ export const uiGlossary = {
     replay: "수순 다시보기",
     savedGames: "저장된 대국",
     liveBoard: "학습 보드",
+    studyPerspective: "학습 시점",
     check: "체크",
     lastMove: "마지막 수",
   },
@@ -43,6 +44,8 @@ export const uiGlossary = {
     openRelatedReplay: "관련 복기 열기",
     selectWeakness: "이 약점 자세히 보기",
     preparingReview: "복기 준비 중",
+    studyWhite: "백으로 공부",
+    studyBlack: "흑으로 공부",
   },
   sections: {
     workspace: "작업 영역",
@@ -51,6 +54,7 @@ export const uiGlossary = {
     liveSyncSummary: "실시간 동기화 요약",
     resume: "이어하기",
     savedInProgressGames: "저장된 진행 중 대국",
+    studyPerspective: "학습 시점",
     immediateFeedback: "즉시 피드백",
     currentGuidance: "현재 국면 가이드",
     analysisDetails: "분석 상세",
@@ -59,6 +63,7 @@ export const uiGlossary = {
     goodMoves: "좋았던 수",
     turningPoints: "흐름이 바뀐 순간",
     selectedMove: "선택한 수",
+    replayPerspective: "복기 시점",
     importantMoments: "중요한 장면",
     currentLearningFocus: "현재 수 학습 포인트",
     whyItMatters: "왜 중요한지",
@@ -77,6 +82,8 @@ export const uiGlossary = {
     analysis: "분석",
     review: "복기",
     availableMoves: "가능한 수",
+    studySide: "내가 공부하는 쪽",
+    currentPerspective: "현재 보는 기준",
     bestMoveGap: "최선 수와 차이",
     nextPlan: "다음 계획",
     evaluation: "평가값",
@@ -210,6 +217,9 @@ export const uiScreenText = {
       "이 영역은 보조 정보입니다. 분석이 늦거나 없더라도 먼저 피드백과 계획을 보는 흐름이 유지되도록 구성했습니다.",
     overlayHelper:
       "오버레이는 클릭을 가로채지 않도록 처리되어 있어 클릭 이동과 드래그 입력이 그대로 유지됩니다.",
+    perspectiveTitle: "어느 쪽을 공부할지 먼저 고르세요",
+    perspectiveBody:
+      "보드 방향을 뒤집는 기능이 아니라, 같은 분석과 피드백을 백 기준으로 볼지 흑 기준으로 읽을지 정하는 학습용 시점입니다.",
   },
   review: {
     title: uiGlossary.views.review,
@@ -271,6 +281,153 @@ export function viewLabel(viewMode: ViewMode): string {
 
 export function turnLabel(color: ColorName): string {
   return color === "white" ? "백" : "흑";
+}
+
+export function studyPerspectiveOptionLabel(color: ColorName): string {
+  return color === "white" ? uiGlossary.buttons.studyWhite : uiGlossary.buttons.studyBlack;
+}
+
+export function studyPerspectiveStatusLabel(color: ColorName): string {
+  return `${uiGlossary.concepts.studyPerspective}: ${turnLabel(color)}`;
+}
+
+export function replayPerspectiveStatusLabel(color: ColorName): string {
+  return `${uiGlossary.sections.replayPerspective}: ${turnLabel(color)}`;
+}
+
+export function studyPerspectiveSummary(studyPerspective: ColorName, turn: ColorName): string {
+  if (studyPerspective === turn) {
+    return `지금은 ${turnLabel(studyPerspective)}의 입장에서 바로 선택을 읽는 포지션입니다.`;
+  }
+  return `내가 공부하는 쪽은 ${turnLabel(studyPerspective)}이고, 지금 추천 수와 계획은 ${turnLabel(turn)} 차례 기준입니다. 상대의 의도를 먼저 읽고 대비하세요.`;
+}
+
+export function reviewPerspectiveSummary(studyPerspective: ColorName): string {
+  return `${turnLabel(studyPerspective)}의 입장에서 주요 실수, 좋았던 수, 전환점, 다음 학습 포인트를 읽도록 돕는 복기 시점입니다.`;
+}
+
+export function replayPerspectiveSummary(studyPerspective: ColorName, turnAfterMove: ColorName): string {
+  if (studyPerspective === turnAfterMove) {
+    return `지금은 ${turnLabel(studyPerspective)} 차례가 돌아온 장면입니다. 내가 공부하는 쪽이 여기서 어떤 선택을 준비해야 하는지 보세요.`;
+  }
+  return `지금은 상대인 ${turnLabel(turnAfterMove)} 차례가 된 장면입니다. ${turnLabel(studyPerspective)}을 공부할 때는 상대의 응수와 내 대응 계획을 함께 읽으세요.`;
+}
+
+export function studyFeedbackLead(studyPerspective: ColorName, playedSide: ColorName | null): string {
+  if (playedSide === null) {
+    return "선택한 학습 시점 기준으로 방금 둔 수를 읽습니다.";
+  }
+  if (playedSide === studyPerspective) {
+    return `방금 둔 수는 내가 공부하는 ${turnLabel(studyPerspective)}의 선택입니다.`;
+  }
+  return `방금 둔 수는 상대 쪽 선택입니다. ${turnLabel(studyPerspective)}의 입장에서는 이 수에 어떻게 대응할지가 핵심입니다.`;
+}
+
+export function studyCandidateLead(studyPerspective: ColorName, turn: ColorName): string {
+  if (studyPerspective === turn) {
+    return `아래 추천 수는 지금 ${turnLabel(studyPerspective)} 차례에서 바로 둘 수 있는 상위 후보입니다.`;
+  }
+  return `아래 추천 수는 지금 상대인 ${turnLabel(turn)} 차례 기준입니다. ${turnLabel(studyPerspective)}을 공부할 때는 상대의 최선 응수를 먼저 예상하는 용도로 보세요.`;
+}
+
+export function studyPlanLead(studyPerspective: ColorName, turn: ColorName): string {
+  if (studyPerspective === turn) {
+    return `현재 계획은 ${turnLabel(studyPerspective)}이 지금 바로 고려할 흐름입니다.`;
+  }
+  return `현재 계획은 상대인 ${turnLabel(turn)} 차례 기준입니다. ${turnLabel(studyPerspective)}을 공부할 때는 이 흐름을 허용해도 되는지 먼저 점검하세요.`;
+}
+
+export function replayMoveStudyLead(studyPerspective: ColorName, moveSide: ColorName | null): string {
+  if (moveSide === null) {
+    return "선택한 복기 시점 기준으로 이 장면을 읽습니다.";
+  }
+  if (moveSide === studyPerspective) {
+    return `이 수는 내가 공부하는 ${turnLabel(studyPerspective)}의 선택이었습니다. 당시 판단이 왜 중요했는지 먼저 보세요.`;
+  }
+  return `이 수는 상대가 둔 선택이었습니다. ${turnLabel(studyPerspective)}의 입장에서는 이 수를 미리 읽고 어떻게 대응했어야 하는지가 핵심입니다.`;
+}
+
+export function replayReviewNotesLead(studyPerspective: ColorName, moveSide: ColorName | null): string {
+  if (moveSide === null) {
+    return "이 장면이 왜 중요했는지 복기 메모를 통해 확인합니다.";
+  }
+  if (moveSide === studyPerspective) {
+    return `${turnLabel(studyPerspective)}의 입장에서 왜 이 수가 흐름을 바꿨는지 정리한 메모입니다.`;
+  }
+  return `상대의 선택이 ${turnLabel(studyPerspective)}에게 왜 부담이 되었는지, 또는 어떤 경고였는지를 정리한 메모입니다.`;
+}
+
+export function replayPlanLead(studyPerspective: ColorName, moveSide: ColorName | null): string {
+  if (moveSide === null) {
+    return "다음에 무엇을 볼지 정리한 학습 메모입니다.";
+  }
+  if (moveSide === studyPerspective) {
+    return `${turnLabel(studyPerspective)}이 다음에 비슷한 장면에서 바로 떠올려야 할 계획입니다.`;
+  }
+  return `${turnLabel(studyPerspective)}의 입장에서 상대의 흐름을 허용하지 않으려면 무엇을 먼저 봐야 하는지 정리한 메모입니다.`;
+}
+
+export function reviewSectionLead(
+  section: "mistakes" | "good" | "turning" | "study",
+  studyPerspective: ColorName,
+): string {
+  if (section === "mistakes") {
+    return `${turnLabel(studyPerspective)}을 공부하는 입장에서 특히 다시 봐야 할 실수 장면입니다.`;
+  }
+  if (section === "good") {
+    return `${turnLabel(studyPerspective)}의 입장에서 다음에도 반복하고 싶은 좋은 판단을 모았습니다.`;
+  }
+  if (section === "turning") {
+    return `${turnLabel(studyPerspective)} 기준으로 흐름이 크게 꺾인 장면을 먼저 확인하세요.`;
+  }
+  return `${turnLabel(studyPerspective)}의 입장에서 다음에 무엇을 더 공부해야 할지 정리한 목록입니다.`;
+}
+
+export function reviewItemPerspectiveLead(studyPerspective: ColorName, moveSide: ColorName | null): string {
+  if (moveSide === null) {
+    return "이 장면을 선택한 시점 기준으로 다시 확인해 보세요.";
+  }
+  if (moveSide === studyPerspective) {
+    return `내가 공부하는 ${turnLabel(studyPerspective)}의 결정 장면입니다.`;
+  }
+  return `상대의 선택이 ${turnLabel(studyPerspective)}에게 어떤 영향을 줬는지 보는 장면입니다.`;
+}
+
+export function studyEvaluationSummary(
+  score: EvaluationScore | null,
+  turn: ColorName,
+  studyPerspective: ColorName,
+): string {
+  if (!score || (score.centipawns === null && score.mate === null)) {
+    return "내가 공부하는 쪽 기준 우세 흐름은 아직 뚜렷하게 읽히지 않습니다.";
+  }
+
+  const signedScore =
+    score.mate !== null
+      ? (score.mate > 0 ? 100000 - Math.abs(score.mate) : -100000 + Math.abs(score.mate))
+      : (score.centipawns ?? 0);
+  const perspectiveScore = studyPerspective === turn ? signedScore : -signedScore;
+
+  if (score.mate !== null) {
+    if (perspectiveScore > 0) {
+      return `${turnLabel(studyPerspective)} 기준으로 메이트 위협이 보이는 매우 유리한 흐름입니다.`;
+    }
+    return `${turnLabel(studyPerspective)} 기준으로 메이트를 조심해야 하는 매우 위험한 흐름입니다.`;
+  }
+
+  if (perspectiveScore >= 140) {
+    return `${turnLabel(studyPerspective)} 기준으로 꽤 편한 흐름입니다. 주도권을 유지하는 계획을 먼저 보세요.`;
+  }
+  if (perspectiveScore >= 40) {
+    return `${turnLabel(studyPerspective)} 기준으로 조금 더 편한 흐름입니다. 무리하지 말고 좋은 자리와 안전을 지키세요.`;
+  }
+  if (perspectiveScore <= -140) {
+    return `${turnLabel(studyPerspective)} 기준으로 불리한 흐름입니다. 상대의 직접 위협과 약점을 먼저 막아야 합니다.`;
+  }
+  if (perspectiveScore <= -40) {
+    return `${turnLabel(studyPerspective)} 기준으로 살짝 불편한 흐름입니다. 느슨한 기물과 킹 안전을 먼저 점검하세요.`;
+  }
+  return `${turnLabel(studyPerspective)} 기준으로 큰 차이는 없는 국면입니다. 다음 한 수의 질이 더 중요합니다.`;
 }
 
 export function turnStatusLabel(color: ColorName): string {

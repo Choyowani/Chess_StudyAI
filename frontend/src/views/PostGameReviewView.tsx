@@ -1,10 +1,15 @@
-import type { ArchivedGame } from "../types";
+import type { ArchivedGame, ColorName } from "../types";
 import {
   colorPerspectiveLabel,
   localizeStudyText,
   movesPlayedLabel,
   replayPlyLabel,
+  replayPerspectiveStatusLabel,
+  reviewItemPerspectiveLead,
+  reviewPerspectiveSummary,
   reviewResultLabel,
+  reviewSectionLead,
+  studyPerspectiveOptionLabel,
   uiGlossary,
   uiScreenText,
   uiStatusText,
@@ -12,6 +17,8 @@ import {
 
 type PostGameReviewViewProps = {
   archivedGame: ArchivedGame | null;
+  studyPerspective: ColorName;
+  onStudyPerspectiveChange: (value: ColorName) => void;
   onReplayFromPly: (plyIndex: number) => void;
   onOpenArchive: () => void;
   onOpenWeakness: () => void;
@@ -19,6 +26,8 @@ type PostGameReviewViewProps = {
 
 export function PostGameReviewView({
   archivedGame,
+  studyPerspective,
+  onStudyPerspectiveChange,
   onReplayFromPly,
   onOpenArchive,
   onOpenWeakness,
@@ -42,6 +51,8 @@ export function PostGameReviewView({
   }
 
   const report = archivedGame.review_report;
+  const moveSideForPly = (plyIndex: number): ColorName | null =>
+    archivedGame.move_logs.find((move) => move.ply_index === plyIndex)?.side_to_move_before ?? null;
 
   return (
     <div className="review-layout">
@@ -54,11 +65,27 @@ export function PostGameReviewView({
           <div className="status-strip">
             <span className="status-pill">{movesPlayedLabel(archivedGame.move_logs.length)}</span>
             <span className="status-pill">{colorPerspectiveLabel(archivedGame.user_color)}</span>
+            <span className="status-pill accent">{replayPerspectiveStatusLabel(studyPerspective)}</span>
           </div>
         </div>
-        <p className="support-copy">
+        <p className="support-copy compact-copy">
           {archivedGame.summary_text ? localizeStudyText(archivedGame.summary_text) : uiStatusText.empty.storedReviewSummary}
         </p>
+        <div className="perspective-toggle-group" role="group" aria-label={uiGlossary.sections.replayPerspective}>
+          {(["white", "black"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`perspective-toggle ${studyPerspective === option ? "active" : ""}`}
+              onClick={() => onStudyPerspectiveChange(option)}
+            >
+              {studyPerspectiveOptionLabel(option)}
+            </button>
+          ))}
+        </div>
+        <div className="helper-callout subtle-callout">
+          <strong>{uiGlossary.sections.replayPerspective}:</strong> {reviewPerspectiveSummary(studyPerspective)}
+        </div>
         <div className="toolbar-row">
           <button type="button" className="secondary-button" onClick={onOpenArchive}>
             {uiGlossary.buttons.startReplay}
@@ -76,6 +103,7 @@ export function PostGameReviewView({
             <h3>{uiScreenText.review.mistakesTitle}</h3>
           </div>
         </div>
+        <p className="helper-note subtle-note">{reviewSectionLead("mistakes", studyPerspective)}</p>
         {report.critical_mistakes.length > 0 ? (
           <div className="moment-grid">
             {report.critical_mistakes.map((item) => (
@@ -87,7 +115,8 @@ export function PostGameReviewView({
               >
                 <strong>{item.move_san}</strong>
                 <span>{replayPlyLabel(item.ply_index)}</span>
-                <p>{localizeStudyText(item.note)}</p>
+                <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
+                <p className="line-clamp-3">{localizeStudyText(item.note)}</p>
               </button>
             ))}
           </div>
@@ -107,6 +136,7 @@ export function PostGameReviewView({
               <h3>{uiScreenText.review.goodMovesTitle}</h3>
             </div>
           </div>
+          <p className="helper-note subtle-note">{reviewSectionLead("good", studyPerspective)}</p>
           {report.good_moves.length > 0 ? (
             <div className="moment-grid">
               {report.good_moves.map((item) => (
@@ -115,12 +145,13 @@ export function PostGameReviewView({
                 type="button"
                 className="moment-card moment-card-good"
                 onClick={() => onReplayFromPly(item.ply_index)}
-              >
-                <strong>{item.move_san}</strong>
-                <span>{replayPlyLabel(item.ply_index)}</span>
-                <p>{localizeStudyText(item.note)}</p>
-              </button>
-            ))}
+                >
+                  <strong>{item.move_san}</strong>
+                  <span>{replayPlyLabel(item.ply_index)}</span>
+                  <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
+                  <p className="line-clamp-3">{localizeStudyText(item.note)}</p>
+                </button>
+              ))}
           </div>
           ) : (
             <p className="helper-note">{uiStatusText.empty.noGoodMoves}</p>
@@ -134,6 +165,7 @@ export function PostGameReviewView({
               <h3>{uiScreenText.review.turningPointsTitle}</h3>
             </div>
           </div>
+          <p className="helper-note subtle-note">{reviewSectionLead("turning", studyPerspective)}</p>
           {report.turning_points.length > 0 ? (
             <div className="moment-grid">
               {report.turning_points.map((item) => (
@@ -142,12 +174,13 @@ export function PostGameReviewView({
                 type="button"
                 className="moment-card moment-card-shift"
                 onClick={() => onReplayFromPly(item.ply_index)}
-              >
-                <strong>{item.move_san}</strong>
-                <span>{replayPlyLabel(item.ply_index)}</span>
-                <p>{localizeStudyText(item.note)}</p>
-              </button>
-            ))}
+                >
+                  <strong>{item.move_san}</strong>
+                  <span>{replayPlyLabel(item.ply_index)}</span>
+                  <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
+                  <p className="line-clamp-3">{localizeStudyText(item.note)}</p>
+                </button>
+              ))}
           </div>
           ) : (
             <p className="helper-note">{uiStatusText.empty.noTurningPoints}</p>
@@ -162,6 +195,7 @@ export function PostGameReviewView({
             <h3>{uiScreenText.review.studyFocusTitle}</h3>
           </div>
         </div>
+        <p className="helper-note subtle-note">{reviewSectionLead("study", studyPerspective)}</p>
         <ol className="detail-list">
           {report.study_points.map((point, index) => (
             <li key={`study-${index + 1}`}>{localizeStudyText(point)}</li>

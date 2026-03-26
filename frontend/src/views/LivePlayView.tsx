@@ -1,6 +1,6 @@
 import type { DragEvent } from "react";
 import { BoardView } from "../board";
-import type { BoardSquare, CandidateOverlay, GameSnapshot } from "../types";
+import type { BoardSquare, CandidateOverlay, ColorName, GameSnapshot } from "../types";
 import {
   feedbackSummaryMessage,
   formatEvaluation,
@@ -9,6 +9,13 @@ import {
   localizeBackendMessage,
   localizeStudyText,
   movesPlayedLabel,
+  studyCandidateLead,
+  studyEvaluationSummary,
+  studyFeedbackLead,
+  studyPerspectiveOptionLabel,
+  studyPerspectiveStatusLabel,
+  studyPerspectiveSummary,
+  studyPlanLead,
   translateMoveQuality,
   turnStatusLabel,
   uiGlossary,
@@ -23,8 +30,10 @@ type LivePlayViewProps = {
   selectedSquare: string | null;
   overlays: CandidateOverlay[];
   checkedSquare: string | null;
+  studyPerspective: ColorName;
   isSubmitting: boolean;
   hasReviewReady: boolean;
+  onStudyPerspectiveChange: (value: ColorName) => void;
   onSquareClick: (square: BoardSquare) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
   onDrop: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
@@ -50,8 +59,10 @@ export function LivePlayView({
   selectedSquare,
   overlays,
   checkedSquare,
+  studyPerspective,
   isSubmitting,
   hasReviewReady,
+  onStudyPerspectiveChange,
   onSquareClick,
   onDragStart,
   onDrop,
@@ -63,6 +74,7 @@ export function LivePlayView({
   const feedback = snapshot.feedback;
   const analysis = snapshot.analysis;
   const analysisReady = analysis && analysis.fen === snapshot.fen;
+  const playedSide = snapshot.move_history.length > 0 ? snapshot.move_history[snapshot.move_history.length - 1].side_to_move_before : null;
 
   return (
     <div className="content-grid content-grid-live">
@@ -108,13 +120,39 @@ export function LivePlayView({
             {snapshot.status.is_check ? <span className="status-pill warning">{uiGlossary.concepts.check}</span> : null}
           </div>
           <p className="support-copy">{message}</p>
-          <div className="helper-callout">
+          <div className="helper-callout subtle-callout">
             <strong>동기화 원칙:</strong> {uiScreenText.live.syncPrinciple}
           </div>
         </div>
       </section>
 
       <aside className="study-column">
+        <section className="panel-card">
+          <div className="panel-head compact">
+            <div>
+              <p className="eyebrow">{uiGlossary.sections.studyPerspective}</p>
+              <h3>{uiScreenText.live.perspectiveTitle}</h3>
+            </div>
+            <span className="status-pill accent">{studyPerspectiveStatusLabel(studyPerspective)}</span>
+          </div>
+          <p className="helper-note">{uiScreenText.live.perspectiveBody}</p>
+          <div className="perspective-toggle-group" role="group" aria-label={uiGlossary.concepts.studyPerspective}>
+            {(["white", "black"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`perspective-toggle ${studyPerspective === option ? "active" : ""}`}
+                onClick={() => onStudyPerspectiveChange(option)}
+              >
+                {studyPerspectiveOptionLabel(option)}
+              </button>
+            ))}
+          </div>
+          <div className="helper-callout subtle-callout">
+            <strong>{uiGlossary.labels.studySide}:</strong> {studyPerspectiveSummary(studyPerspective, snapshot.status.turn)}
+          </div>
+        </section>
+
         <section className="panel-card emphasis-card">
           <div className="panel-head compact">
             <div>
@@ -129,6 +167,7 @@ export function LivePlayView({
           </div>
           {feedback ? (
             <div className="stack-sm">
+              <p className="helper-note">{studyFeedbackLead(studyPerspective, playedSide)}</p>
               <p className="body-strong">
                 {feedbackSummaryMessage(feedback.played_move_san, feedback.best_move_san)}
               </p>
@@ -143,6 +182,7 @@ export function LivePlayView({
                   <strong>{localizeStudyText(feedback.current_plan)}</strong>
                 </div>
               </div>
+              <p className="helper-note">{studyPlanLead(studyPerspective, snapshot.status.turn)}</p>
             </div>
           ) : snapshot.feedback_error ? (
             <div className="empty-state-inline">
@@ -164,11 +204,14 @@ export function LivePlayView({
               <h3>{uiScreenText.live.guidanceTitle}</h3>
             </div>
           </div>
-          <p>{liveStatusMessage(snapshot.move_history.length)}</p>
-          <div className="tag-row">
-            <span className="tag-pill">{uiGlossary.concepts.lastMove} 강조</span>
-            <span className="tag-pill">{uiGlossary.concepts.check} 강조</span>
-            <span className="tag-pill">상위 3개 {uiGlossary.concepts.candidateMoves}</span>
+          <p className="body-strong">
+            {studyEvaluationSummary(analysisReady ? analysis.evaluation : null, snapshot.status.turn, studyPerspective)}
+          </p>
+              <p>{liveStatusMessage(snapshot.move_history.length)}</p>
+              <div className="tag-row">
+                <span className="tag-pill">{uiGlossary.concepts.lastMove} 강조</span>
+                <span className="tag-pill">{uiGlossary.concepts.check} 강조</span>
+                <span className="tag-pill">상위 3개 {uiGlossary.concepts.candidateMoves}</span>
           </div>
         </section>
 
@@ -181,18 +224,18 @@ export function LivePlayView({
           </div>
           {analysisReady ? (
             <div className="stack-sm">
+              <p className="helper-note">{studyCandidateLead(studyPerspective, snapshot.status.turn)}</p>
               <div className="candidate-legend">
                 {analysis.top_moves.slice(0, 3).map((move) => (
                   <div key={`${move.rank}-${move.move_uci}`} className="candidate-row">
                     <span className={`candidate-rank rank-${move.rank}`}>{move.rank}</span>
                     <div>
                       <strong>{move.move_san}</strong>
-                      <p>{move.move_uci}</p>
+                      <p>{move.principal_variation_san.slice(0, 3).join(" ") || move.move_uci}</p>
                     </div>
                   </div>
                 ))}
               </div>
-              <p className="helper-note">{uiScreenText.live.overlayHelper}</p>
             </div>
           ) : snapshot.analysis_error ? (
             <div className="empty-state-inline">
@@ -207,13 +250,14 @@ export function LivePlayView({
           )}
         </section>
 
-        <section className="panel-card">
-          <div className="panel-head compact">
+        <details className="panel-card collapsible-panel">
+          <summary className="panel-summary">
             <div>
               <p className="eyebrow">{uiGlossary.sections.analysisDetails}</p>
               <h3>{uiScreenText.live.analysisDetailsTitle}</h3>
             </div>
-          </div>
+            {analysisReady ? <span className="status-pill">{formatEvaluation(analysis.evaluation)}</span> : null}
+          </summary>
           {analysisReady ? (
             <div className="stack-sm">
               <div className="info-grid compact">
@@ -226,22 +270,23 @@ export function LivePlayView({
                   <strong>{analysis.best_move.move_san}</strong>
                 </div>
               </div>
+              <p className="helper-note">{studyPlanLead(studyPerspective, snapshot.status.turn)}</p>
               <ol className="detail-list">
                 {analysis.top_moves.slice(0, 3).map((move) => (
                   <li key={`analysis-${move.rank}`}>
                     <strong>
                       {move.rank}. {move.move_san}
                     </strong>
-                    <span>{move.move_uci}</span>
-                    <div>{uiGlossary.labels.representativeLine}: {move.principal_variation_san.join(" ") || uiStatusText.empty.noStoredLine}</div>
+                    <div>{uiGlossary.labels.representativeLine}: {move.principal_variation_san.slice(0, 4).join(" ") || uiStatusText.empty.noStoredLine}</div>
                   </li>
                 ))}
               </ol>
+              <p className="helper-note subtle-note">{uiScreenText.live.overlayHelper}</p>
             </div>
           ) : (
             <p className="helper-note">{uiScreenText.live.analysisFallback}</p>
           )}
-        </section>
+        </details>
 
         <section className="panel-card future-card">
           <div className="panel-head compact">
