@@ -235,8 +235,14 @@ def apply_move(game_id: str, payload: MoveRequest) -> GameSnapshotResponse:
         raise HTTPException(status_code=404, detail="Game session was not found.")
 
     before_fen = session.game_state.current_fen()
+    move_uci = payload.move_uci
+    if payload.promotion_piece is not None:
+        if len(move_uci) == 4:
+            move_uci = f"{move_uci}{payload.promotion_piece}"
+        elif len(move_uci) == 5 and move_uci[-1].lower() != payload.promotion_piece:
+            raise HTTPException(status_code=400, detail="Promotion choice does not match the requested move.")
     try:
-        move_record = session.game_state.apply_uci_move(payload.move_uci)
+        move_record = session.game_state.apply_uci_move(move_uci)
     except InvalidMoveError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -299,4 +305,35 @@ def apply_move(game_id: str, payload: MoveRequest) -> GameSnapshotResponse:
         analysis_error=analysis_error,
         feedback=feedback,
         feedback_error=feedback_error,
+    )
+
+
+@app.post("/api/games/{game_id}/undo", response_model=GameSnapshotResponse)
+def undo_last_move(game_id: str) -> GameSnapshotResponse:
+    session = _get_or_restore_session(game_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Game session was not found.")
+    if session.archived_game_id is not None or session.game_state.status().is_game_over:
+        raise HTTPException(status_code=400, detail="Undo is only available during a live study session.")
+    if not session.game_state.move_history:
+        raise HTTPException(status_code=400, detail="No moves available to undo.")
+
+    undone_move = session.game_state.undo_last_move()
+    removed_review_entry = session.review_entries.pop() if session.review_entries else None
+
+    try:
+        _save_checkpoint(session)
+    except Exception as exc:
+        session.game_state.apply_uci_move(undone_move.move_uci)
+        if removed_review_entry is not None:
+            session.review_entries.append(removed_review_entry)
+        raise HTTPException(status_code=500, detail="Move undo was rejected because checkpoint persistence failed.") from exc
+
+    analysis, analysis_error = _analysis_payload(session.game_state.current_fen())
+    return _snapshot_from_session(
+        session,
+        analysis=analysis,
+        analysis_error=analysis_error,
+        feedback=None,
+        feedback_error=None,
     )

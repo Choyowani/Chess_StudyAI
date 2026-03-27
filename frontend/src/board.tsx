@@ -1,4 +1,4 @@
-import type { BoardSquare, CandidateOverlay, GameSnapshot, PieceColor } from "./types";
+import type { BoardSquare, CandidateOverlay, GameSnapshot, PieceColor, PromotionPieceCode } from "./types";
 import { ChessPieceSvg } from "./chess-pieces";
 import { boardSquareAriaLabel, uiGlossary } from "./ui-text";
 
@@ -53,17 +53,26 @@ export function isInteractivePiece(snapshot: GameSnapshot, square: BoardSquare):
   return pieceColor(square.piece) === sideToMove(snapshot.fen);
 }
 
-export function toMoveUci(snapshot: GameSnapshot, from: string, to: string): string {
+export function promotionRequired(snapshot: GameSnapshot, from: string, to: string): boolean {
   const board = fenToBoard(snapshot.fen);
   const source = board.find((square) => square.square === from);
   const rank = Number(to[1]);
   const movingPiece = source?.piece ?? null;
-  const isPromotion =
+  return (
     movingPiece !== null &&
     movingPiece.toLowerCase() === "p" &&
-    ((movingPiece === "P" && rank === 8) || (movingPiece === "p" && rank === 1));
+    ((movingPiece === "P" && rank === 8) || (movingPiece === "p" && rank === 1))
+  );
+}
 
-  return `${from}${to}${isPromotion ? "q" : ""}`;
+export function promotionColorForMove(snapshot: GameSnapshot, from: string): PieceColor | null {
+  const board = fenToBoard(snapshot.fen);
+  const source = board.find((square) => square.square === from);
+  return pieceColor(source?.piece ?? null);
+}
+
+export function toMoveUci(from: string, to: string, promotionPiece: PromotionPieceCode | null = null): string {
+  return `${from}${to}${promotionPiece ?? ""}`;
 }
 
 export function lastMoveSquares(lastMoveUci: string | null): [string, string] | null {
@@ -86,20 +95,11 @@ export function checkedKingSquare(snapshot: GameSnapshot): string | null {
 export function candidateForSquare(
   overlays: CandidateOverlay[],
   square: string,
-): { fromRank: number | null; toRank: number | null } {
-  let fromRank: number | null = null;
-  let toRank: number | null = null;
-
-  overlays.forEach((overlay) => {
-    if (overlay.from === square) {
-      fromRank = overlay.rank;
-    }
-    if (overlay.to === square) {
-      toRank = overlay.rank;
-    }
-  });
-
-  return { fromRank, toRank };
+): { fromRanks: CandidateOverlay[]; toRanks: CandidateOverlay[] } {
+  return {
+    fromRanks: overlays.filter((overlay) => overlay.from === square).sort((left, right) => left.rank - right.rank),
+    toRanks: overlays.filter((overlay) => overlay.to === square).sort((left, right) => left.rank - right.rank),
+  };
 }
 
 type BoardViewProps = {
@@ -107,6 +107,7 @@ type BoardViewProps = {
   lastMoveUci: string | null;
   checkedSquare: string | null;
   overlays: CandidateOverlay[];
+  activeCandidateMoveUci?: string | null;
   selectedSquare?: string | null;
   interactive?: boolean;
   disabled?: boolean;
@@ -120,6 +121,7 @@ export function BoardView({
   lastMoveUci,
   checkedSquare,
   overlays,
+  activeCandidateMoveUci = null,
   selectedSquare = null,
   interactive = false,
   disabled = false,
@@ -140,12 +142,17 @@ export function BoardView({
         const isLastMove = highlightedMove?.includes(square.square) ?? false;
         const isCheckSquare = checkedSquare === square.square;
         const candidate = candidateForSquare(overlays, square.square);
+        const isCandidateActive =
+          activeCandidateMoveUci === null ||
+          candidate.fromRanks.some((overlay) => overlay.moveUci === activeCandidateMoveUci) ||
+          candidate.toRanks.some((overlay) => overlay.moveUci === activeCandidateMoveUci);
         const classes = [
           "board-square",
           isDark ? "dark" : "light",
           isSelected ? "selected" : "",
           isLastMove ? "last-move" : "",
           isCheckSquare ? "check-square" : "",
+          !isCandidateActive && overlays.length > 0 && activeCandidateMoveUci ? "candidate-muted" : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -167,16 +174,37 @@ export function BoardView({
             aria-label={boardSquareAriaLabel(square.square, square.piece)}
             disabled={disabled}
           >
-            {candidate.fromRank ? (
-              <span className={`candidate-origin rank-${candidate.fromRank}`} aria-hidden="true" />
-            ) : null}
-            {candidate.toRank ? (
-              <>
-                <span className={`candidate-target rank-${candidate.toRank}`} aria-hidden="true" />
-                <span className={`candidate-badge rank-${candidate.toRank}`} aria-hidden="true">
-                  {candidate.toRank}
-                </span>
-              </>
+            {candidate.fromRanks.map((overlay, overlayIndex) => (
+              <span
+                key={`from-${overlay.moveUci}`}
+                className={`candidate-origin rank-${overlay.rank} layer-${overlayIndex + 1} ${
+                  activeCandidateMoveUci === overlay.moveUci ? "active" : ""
+                }`}
+                aria-hidden="true"
+              />
+            ))}
+            {candidate.toRanks.map((overlay, overlayIndex) => (
+              <span
+                key={`to-${overlay.moveUci}`}
+                className={`candidate-target rank-${overlay.rank} layer-${overlayIndex + 1} ${
+                  activeCandidateMoveUci === overlay.moveUci ? "active" : ""
+                }`}
+                aria-hidden="true"
+              />
+            ))}
+            {candidate.toRanks.length > 0 ? (
+              <span className="candidate-badge-stack" aria-hidden="true">
+                {candidate.toRanks.map((overlay) => (
+                  <span
+                    key={`badge-${overlay.moveUci}`}
+                    className={`candidate-badge rank-${overlay.rank} ${
+                      activeCandidateMoveUci === overlay.moveUci ? "active" : ""
+                    }`}
+                  >
+                    {overlay.rank}
+                  </span>
+                ))}
+              </span>
             ) : null}
             <span className="square-label file-label">{rankIndex === 7 ? square.square[0] : ""}</span>
             <span className="square-label rank-label">{fileIndex === 0 ? square.square[1] : ""}</span>

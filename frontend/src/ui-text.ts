@@ -46,6 +46,12 @@ export const uiGlossary = {
     preparingReview: "복기 준비 중",
     studyWhite: "백으로 공부",
     studyBlack: "흑으로 공부",
+    cancelPromotion: "승격 선택 취소",
+    openSavedReplay: "저장된 대국 보기",
+    startNewStudy: "새 학습 시작",
+    closeModal: "나중에 보기",
+    undoMove: "이전 수로 되돌리기",
+    saveStudy: "학습 저장",
   },
   sections: {
     workspace: "작업 영역",
@@ -75,6 +81,8 @@ export const uiGlossary = {
     weaknessSummary: "약점 요약",
     relatedGames: "관련 대국",
     futureTools: "이후 확장 영역",
+    promotion: "승격",
+    learningComplete: "학습 종료",
   },
   labels: {
     turn: "차례",
@@ -102,6 +110,7 @@ export const uiGlossary = {
     frequency: "발생 빈도",
     actionPriority: "우선도",
     availableExample: "대표 사례",
+    choosePromotionPiece: "승격 기물 선택",
   },
   board: {
     ariaLabel: "체스판",
@@ -123,6 +132,10 @@ export const uiStatusText = {
   startPosition: "시작 포지션",
   selectionCleared: "선택을 해제했습니다.",
   stalemate: "스테일메이트입니다.",
+  promotion: {
+    prompt: "마지막 랭크에 도달했습니다. 승격할 기물을 고르세요.",
+    cancelled: "승격 선택을 취소했습니다.",
+  },
   loading: {
     newGame: "새 대국을 준비하는 중입니다...",
     archiveList: "저장된 대국 목록을 불러오는 중입니다...",
@@ -130,6 +143,7 @@ export const uiStatusText = {
     weaknessSummary: "반복 약점 요약을 불러오는 중입니다...",
     openingArchive: "저장된 대국을 여는 중입니다...",
     resumingGame: "저장된 대국을 이어오는 중입니다...",
+    savingStudy: "현재 학습 상태를 저장하는 중입니다...",
   },
   success: {
     newGameReady: "대국 준비가 끝났습니다. 백 차례입니다.",
@@ -139,6 +153,13 @@ export const uiStatusText = {
     archiveOpened: (gameId: string) => `${gameId} 대국을 다시보기로 열었습니다.`,
     gameResumed: (gameId: string) => `${gameId} 대국을 이어왔습니다.`,
     gameResumedWithTurn: (gameId: string, turnText: string) => `${gameId} 대국을 이어왔습니다. ${turnText}입니다.`,
+    gameResumedWithUndoReady: (gameId: string, turnText: string) =>
+      `${gameId} 대국을 이어왔습니다. ${turnText}이며, 필요하면 이전 수로 되돌려 다시 시도할 수 있습니다.`,
+    archiveSaved: "이번 대국이 저장되어 복기와 다시보기에 연결되었습니다.",
+    studySaved: "학습이 저장되었습니다. 이어하기에서 다시 불러올 수 있습니다.",
+    studySavedPendingList: "현재 학습 상태를 다시 확인했습니다. 이어하기 목록에서 저장 여부를 확인해 보세요.",
+    studySaveReadyAfterFirstMove: "첫 수를 둔 뒤부터 이어하기에 저장됩니다.",
+    undoReady: (turnText: string) => `이전 수로 되돌렸습니다. ${turnText}에서 다른 수를 다시 시도해 보세요.`,
   },
   empty: {
     archiveList: "저장된 대국이 아직 없습니다.",
@@ -181,12 +202,18 @@ export const uiStatusText = {
     loadArchive: "저장된 대국을 불러오지 못했습니다.",
     resumeGame: "저장된 대국을 이어오지 못했습니다.",
     moveFailed: "수를 반영하지 못했습니다.",
+    moveRejectedAndResynced: "수를 반영하지 못해 최신 대국 상태를 다시 확인했습니다.",
+    undoFailed: "이전 수로 되돌리지 못했습니다.",
+    undoRejectedAndResynced: "되돌리기 요청을 반영하지 못해 최신 대국 상태를 다시 확인했습니다.",
+    saveStudy: "현재 학습 상태를 저장하지 못했습니다.",
     feedbackUnavailableTitle: "피드백을 불러오지 못했습니다",
     analysisUnavailableTitle: "분석을 불러오지 못했습니다",
   },
   placeholder: {
     reviewPreparing: "대국이 끝나면 이곳이 저장된 복기와 수순 다시보기로 넘어가는 입구가 됩니다.",
     reviewReady: "이 대국은 복기 요약이 준비되어 있습니다. 중요한 실수와 좋았던 수를 바로 다시 볼 수 있습니다.",
+    reviewLinkPreparing: "저장된 복기 요약을 여는 중입니다. 잠시 후 복기로 이동할 수 있습니다.",
+    saveStudyMeaning: "현재 대국은 자동 저장되지만, 이 버튼으로 이어하기용 저장 상태를 다시 확인할 수 있습니다.",
   },
 } as const;
 
@@ -220,6 +247,13 @@ export const uiScreenText = {
     perspectiveTitle: "어느 쪽을 공부할지 먼저 고르세요",
     perspectiveBody:
       "보드 방향을 뒤집는 기능이 아니라, 같은 분석과 피드백을 백 기준으로 볼지 흑 기준으로 읽을지 정하는 학습용 시점입니다.",
+    promotionPrompt:
+      "자동으로 퀸으로 확정하지 않습니다. 이번 장면에서 필요한 승격 기물을 직접 고르세요.",
+    saveStudyHelper:
+      "현재 대국을 이어하기에 남겨 두고 싶다면 학습 저장을 눌러 저장 상태를 다시 확인해 보세요.",
+    gameOverModalTitle: "이번 학습이 끝났습니다",
+    gameOverModalBody:
+      "종료된 장면을 바로 복기로 이어가면, 방금 끝난 판의 중요한 실수와 흐름 변화를 놓치지 않고 확인할 수 있습니다.",
   },
   review: {
     title: uiGlossary.views.review,
@@ -259,6 +293,63 @@ export const uiScreenText = {
     replayBridgeTitle: "대표 사례로 바로 복기",
   },
 } as const;
+
+export function gameOverHeadline(status: {
+  is_checkmate: boolean;
+  is_stalemate: boolean;
+  is_draw: boolean;
+  winner: ColorName | null;
+  draw_reason: string | null;
+}): string {
+  if (status.is_checkmate) {
+    return "체크메이트로 학습이 종료되었습니다";
+  }
+  if (status.is_stalemate) {
+    return "스테일메이트로 학습이 종료되었습니다";
+  }
+  if (status.is_draw) {
+    return "무승부로 학습이 종료되었습니다";
+  }
+  return "대국이 종료되었습니다";
+}
+
+export function gameOverResultSummary(status: {
+  is_checkmate: boolean;
+  is_stalemate: boolean;
+  is_draw: boolean;
+  winner: ColorName | null;
+  result: string | null;
+  draw_reason: string | null;
+}): string {
+  if (status.is_checkmate) {
+    return `${turnLabel(status.winner ?? "white")} 승리로 끝났습니다. 마지막 장면을 복기로 바로 이어서 보세요.`;
+  }
+  if (status.is_stalemate) {
+    return "둘 수 있는 합법 수가 없어 무승부로 종료되었습니다.";
+  }
+  if (status.is_draw) {
+    return status.draw_reason
+      ? `${drawReasonLabel(status.draw_reason)}로 무승부가 되었습니다.`
+      : "무승부로 종료되었습니다.";
+  }
+  if (status.result === "1-0") {
+    return "백 승으로 종료되었습니다.";
+  }
+  if (status.result === "0-1") {
+    return "흑 승으로 종료되었습니다.";
+  }
+  return "이 대국은 더 둘 수 없는 종료 상태입니다.";
+}
+
+export function gameOverStudyLead(hasReviewReady: boolean, archivedGameId: string | null): string {
+  if (hasReviewReady) {
+    return "복기 요약이 준비되어 있습니다. 중요한 실수, 좋았던 수, 다음 학습 포인트를 바로 확인해 보세요.";
+  }
+  if (archivedGameId) {
+    return "대국 기록은 저장되었습니다. 복기 요약을 불러오는 동안 저장된 대국 다시보기로 먼저 이동할 수 있습니다.";
+  }
+  return "종료 상태는 확인되었지만 저장 정보가 아직 준비되지 않았습니다. 잠시 후 다시 복기 보기를 눌러 보세요.";
+}
 
 const MOVE_QUALITY_LABELS: Record<string, string> = {
   Good: "좋은 수",
@@ -693,12 +784,18 @@ export function feedbackSummaryMessage(playedMoveSan: string, bestMoveSan: strin
 
 export function localizeBackendMessage(message: string): string {
   return message
+    .replace(/^Illegal move for current position: (.+)$/u, "현재 상태에서는 둘 수 없는 수입니다: $1")
+    .replace(/^Invalid UCI move: (.+)$/u, "수 형식을 해석할 수 없습니다: $1")
     .replace("Engine path is not configured.", "엔진 경로가 설정되지 않았습니다.")
     .replace("Game was created in memory but could not be checkpointed.", "게임은 생성되었지만 저장 체크포인트를 남기지 못했습니다.")
     .replace("Game session was not found.", "진행 중인 대국을 찾지 못했습니다.")
     .replace("In-progress game was not found.", "이어할 대국을 찾지 못했습니다.")
     .replace("Archived game was not found.", "저장된 대국을 찾지 못했습니다.")
     .replace("Move was rejected because checkpoint persistence failed.", "체크포인트 저장에 실패해 수가 반영되지 않았습니다.")
+    .replace("No moves available to undo.", "되돌릴 수가 아직 없습니다.")
+    .replace("Undo is only available during a live study session.", "되돌리기는 진행 중인 학습 대국에서만 사용할 수 있습니다.")
+    .replace("Move undo was rejected because checkpoint persistence failed.", "체크포인트 저장에 실패해 되돌리기가 취소되었습니다.")
+    .replace("Promotion choice does not match the requested move.", "선택한 승격 기물이 요청한 수와 일치하지 않습니다.")
     .replace("Failed to create a game.", uiStatusText.error.createGame)
     .replace("Failed to load archived games.", uiStatusText.error.loadArchiveList)
     .replace("Failed to load resumable games.", uiStatusText.error.loadResumeList)

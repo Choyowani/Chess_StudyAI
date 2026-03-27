@@ -1,4 +1,5 @@
 import unittest
+import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
@@ -7,10 +8,11 @@ from fastapi.testclient import TestClient
 
 import backend.app.main as main_module
 from backend.app.analysis.engine_service import AnalysisFailure, AnalysisResult, CandidateMove, EvaluationScore
+from backend.app.domain.game_state import ChessGameState
 from backend.app.main import app
 from backend.app.persistence.checkpoint_store import SqliteGameCheckpointRepository
 from backend.app.persistence.archive_store import SqliteGameArchiveRepository
-from backend.app.services.game_sessions import GameSessionStore
+from backend.app.services.game_sessions import GameSession, GameSessionStore
 
 
 class FakeAnalysisService:
@@ -44,6 +46,18 @@ class GameApiTests(unittest.TestCase):
             except PermissionError:
                 pass
 
+    def _load_custom_game(self, fen: str, *, user_id: str = "local-user") -> str:
+        session = GameSession(
+            game_id=str(uuid4()),
+            user_id=user_id,
+            game_state=ChessGameState(fen),
+            started_at=main_module.datetime.now(main_module.timezone.utc),
+            review_entries=[],
+        )
+        main_module.store.load_game(session)
+        main_module._save_checkpoint(session)
+        return session.game_id
+
     def test_create_and_fetch_game_snapshot(self) -> None:
         created = self.client.post("/api/games")
         self.assertEqual(created.status_code, 200)
@@ -52,6 +66,20 @@ class GameApiTests(unittest.TestCase):
         fetched = self.client.get(f"/api/games/{game['game_id']}")
         self.assertEqual(fetched.status_code, 200)
         self.assertEqual(fetched.json()["fen"], game["fen"])
+
+    def test_zero_move_sessions_are_not_listed_or_resumable_after_restart(self) -> None:
+        created = self.client.post("/api/games", json={"user_id": "student-zero"})
+        self.assertEqual(created.status_code, 200)
+        game = created.json()
+
+        checkpoints = self.client.get("/api/checkpoints/games")
+        self.assertEqual(checkpoints.status_code, 200)
+        self.assertFalse(any(item["game_id"] == game["game_id"] for item in checkpoints.json()))
+
+        main_module.store = GameSessionStore()
+
+        resumed = self.client.get(f"/api/checkpoints/games/{game['game_id']}/resume")
+        self.assertEqual(resumed.status_code, 404)
 
     def test_illegal_move_is_rejected_without_state_desync(self) -> None:
         created = self.client.post("/api/games")
@@ -272,6 +300,72 @@ class GameApiTests(unittest.TestCase):
         self.assertLessEqual(len(archive_body["review_report"]["critical_mistakes"]), 3)
         self.assertGreaterEqual(len(archive_body["review_report"]["study_points"]), 1)
 
+    def test_archive_repository_migrates_legacy_games_table_with_missing_review_report_column(self) -> None:
+        legacy_db_path = Path("data") / f"legacy_archive_{uuid4().hex}.db"
+        try:
+            with sqlite3.connect(legacy_db_path) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE games (
+                        id TEXT PRIMARY KEY,
+                        started_at TEXT NOT NULL,
+                        finished_at TEXT NOT NULL,
+                        result TEXT,
+                        user_color TEXT NOT NULL,
+                        initial_fen TEXT NOT NULL,
+                        final_fen TEXT NOT NULL,
+                        pgn TEXT NOT NULL,
+                        summary_text TEXT,
+                        user_id TEXT NOT NULL DEFAULT 'local-user'
+                    );
+
+                    CREATE TABLE move_logs (
+                        game_id TEXT NOT NULL,
+                        ply_index INTEGER NOT NULL,
+                        side_to_move_before TEXT NOT NULL,
+                        before_fen TEXT NOT NULL,
+                        move_uci TEXT NOT NULL,
+                        move_san TEXT NOT NULL,
+                        after_fen TEXT NOT NULL,
+                        best_move_uci TEXT,
+                        best_move_san TEXT,
+                        top_moves_json TEXT NOT NULL,
+                        move_quality_label TEXT,
+                        short_coaching_note TEXT,
+                        current_plan TEXT,
+                        pattern_tags_json TEXT NOT NULL DEFAULT '[]',
+                        PRIMARY KEY (game_id, ply_index)
+                    );
+
+                    CREATE TABLE user_patterns (
+                        user_id TEXT NOT NULL,
+                        pattern_type TEXT NOT NULL,
+                        pattern_key TEXT NOT NULL,
+                        frequency INTEGER NOT NULL,
+                        last_seen_at TEXT NOT NULL,
+                        notes TEXT NOT NULL,
+                        PRIMARY KEY (user_id, pattern_type, pattern_key)
+                    );
+                    """
+                )
+                connection.commit()
+
+            migrated_repository = SqliteGameArchiveRepository(legacy_db_path)
+
+            with sqlite3.connect(legacy_db_path) as connection:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)").fetchall()}
+
+            self.assertIn("review_report_json", columns)
+            self.assertIsNotNone(migrated_repository)
+        finally:
+            if "migrated_repository" in locals():
+                del migrated_repository
+            if legacy_db_path.exists():
+                try:
+                    legacy_db_path.unlink()
+                except PermissionError:
+                    pass
+
     def test_archived_game_list_returns_replay_summaries(self) -> None:
         app.state.analysis_service = FakeAnalysisService(
             lambda fen: AnalysisResult(
@@ -416,6 +510,178 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(len(continued_body["move_history"]), 2)
         self.assertEqual(continued_body["last_move_uci"], "e7e5")
 
+    def test_resume_preserves_special_move_legality(self) -> None:
+        initial_fen = "4k3/5p2/8/3pP3/8/8/8/4K3 b - - 0 1"
+        game_id = self._load_custom_game(initial_fen, user_id="student-special")
+
+        prepared = self.client.post(f"/api/games/{game_id}/moves", json={"move_uci": "f7f5"})
+        self.assertEqual(prepared.status_code, 200)
+
+        main_module.store = GameSessionStore()
+
+        resumed = self.client.get(f"/api/checkpoints/games/{game_id}/resume")
+        self.assertEqual(resumed.status_code, 200)
+        resumed_body = resumed.json()
+        self.assertIn("e5f6", resumed_body["legal_moves"])
+        self.assertEqual(resumed_body["status"]["turn"], "white")
+
+        moved = self.client.post(f"/api/games/{game_id}/moves", json={"move_uci": "e5f6"})
+        self.assertEqual(moved.status_code, 200)
+        moved_body = moved.json()
+        self.assertEqual(moved_body["last_move_uci"], "e5f6")
+        self.assertEqual(moved_body["status"]["turn"], "black")
+
+    def test_resumed_session_preserves_study_undo_and_retry_branch(self) -> None:
+        start_fen = chess.STARTING_FEN
+
+        app.state.analysis_service = FakeAnalysisService(
+            lambda fen: AnalysisResult(
+                fen=fen,
+                best_move=CandidateMove(
+                    rank=1,
+                    move_uci="e2e4" if fen == start_fen else "e7e5",
+                    move_san="e4" if fen == start_fen else "e5",
+                    score=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+                    principal_variation_uci=("e2e4", "e7e5") if fen == start_fen else ("e7e5", "g1f3"),
+                    principal_variation_san=("e4", "e5") if fen == start_fen else ("e5", "Nf3"),
+                ),
+                top_moves=(
+                    CandidateMove(
+                        rank=1,
+                        move_uci="e2e4" if fen == start_fen else "e7e5",
+                        move_san="e4" if fen == start_fen else "e5",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+                        principal_variation_uci=("e2e4", "e7e5") if fen == start_fen else ("e7e5", "g1f3"),
+                        principal_variation_san=("e4", "e5") if fen == start_fen else ("e5", "Nf3"),
+                    ),
+                    CandidateMove(
+                        rank=2,
+                        move_uci="d2d4" if fen == start_fen else "c7c5",
+                        move_san="d4" if fen == start_fen else "c5",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=18, mate=None),
+                        principal_variation_uci=("d2d4",) if fen == start_fen else ("c7c5",),
+                        principal_variation_san=("d4",) if fen == start_fen else ("c5",),
+                    ),
+                    CandidateMove(
+                        rank=3,
+                        move_uci="g1f3" if fen == start_fen else "e7e6",
+                        move_san="Nf3" if fen == start_fen else "e6",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=12, mate=None),
+                        principal_variation_uci=("g1f3",) if fen == start_fen else ("e7e6",),
+                        principal_variation_san=("Nf3",) if fen == start_fen else ("e6",),
+                    ),
+                ),
+                evaluation=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+            )
+        )
+
+        created = self.client.post("/api/games")
+        game = created.json()
+
+        moved = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "e2e4"})
+        self.assertEqual(moved.status_code, 200)
+        moved_body = moved.json()
+        self.assertEqual(len(moved_body["move_history"]), 1)
+
+        main_module.store = GameSessionStore()
+
+        resumed = self.client.get(f"/api/checkpoints/games/{game['game_id']}/resume")
+        self.assertEqual(resumed.status_code, 200)
+        resumed_body = resumed.json()
+        self.assertEqual(resumed_body["move_history"], moved_body["move_history"])
+        self.assertEqual(resumed_body["status"]["turn"], "black")
+
+        undone = self.client.post(f"/api/games/{game['game_id']}/undo")
+        self.assertEqual(undone.status_code, 200)
+        undone_body = undone.json()
+        self.assertEqual(undone_body["fen"], start_fen)
+        self.assertEqual(len(undone_body["move_history"]), 0)
+        self.assertEqual(undone_body["status"]["turn"], "white")
+        self.assertIsNotNone(undone_body["analysis"])
+        self.assertIsNone(undone_body["feedback"])
+
+        retried = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "d2d4"})
+        self.assertEqual(retried.status_code, 200)
+        retried_body = retried.json()
+        self.assertEqual(len(retried_body["move_history"]), 1)
+        self.assertEqual(retried_body["move_history"][-1]["move_uci"], "d2d4")
+        self.assertNotEqual(retried_body["fen"], start_fen)
+
+    def test_study_undo_reverts_last_move_and_allows_retry_branch(self) -> None:
+        start_fen = chess.STARTING_FEN
+
+        app.state.analysis_service = FakeAnalysisService(
+            lambda fen: AnalysisResult(
+                fen=fen,
+                best_move=CandidateMove(
+                    rank=1,
+                    move_uci="e2e4" if fen == start_fen else "e7e5",
+                    move_san="e4" if fen == start_fen else "e5",
+                    score=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+                    principal_variation_uci=("e2e4", "e7e5") if fen == start_fen else ("e7e5", "g1f3"),
+                    principal_variation_san=("e4", "e5") if fen == start_fen else ("e5", "Nf3"),
+                ),
+                top_moves=(
+                    CandidateMove(
+                        rank=1,
+                        move_uci="e2e4" if fen == start_fen else "e7e5",
+                        move_san="e4" if fen == start_fen else "e5",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+                        principal_variation_uci=("e2e4", "e7e5") if fen == start_fen else ("e7e5", "g1f3"),
+                        principal_variation_san=("e4", "e5") if fen == start_fen else ("e5", "Nf3"),
+                    ),
+                    CandidateMove(
+                        rank=2,
+                        move_uci="d2d4" if fen == start_fen else "c7c5",
+                        move_san="d4" if fen == start_fen else "c5",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=18, mate=None),
+                        principal_variation_uci=("d2d4",) if fen == start_fen else ("c7c5",),
+                        principal_variation_san=("d4",) if fen == start_fen else ("c5",),
+                    ),
+                    CandidateMove(
+                        rank=3,
+                        move_uci="g1f3" if fen == start_fen else "e7e6",
+                        move_san="Nf3" if fen == start_fen else "e6",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=12, mate=None),
+                        principal_variation_uci=("g1f3",) if fen == start_fen else ("e7e6",),
+                        principal_variation_san=("Nf3",) if fen == start_fen else ("e6",),
+                    ),
+                ),
+                evaluation=EvaluationScore(perspective="side_to_move", centipawns=24, mate=None),
+            )
+        )
+
+        created = self.client.post("/api/games")
+        game = created.json()
+
+        moved = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "e2e4"})
+        self.assertEqual(moved.status_code, 200)
+        moved_body = moved.json()
+        self.assertEqual(len(moved_body["move_history"]), 1)
+
+        undone = self.client.post(f"/api/games/{game['game_id']}/undo")
+        self.assertEqual(undone.status_code, 200)
+        undone_body = undone.json()
+        self.assertEqual(undone_body["fen"], start_fen)
+        self.assertEqual(len(undone_body["move_history"]), 0)
+        self.assertIsNotNone(undone_body["analysis"])
+        self.assertIsNone(undone_body["feedback"])
+        self.assertIsNone(undone_body["feedback_error"])
+
+        retried = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "d2d4"})
+        self.assertEqual(retried.status_code, 200)
+        retried_body = retried.json()
+        self.assertEqual(len(retried_body["move_history"]), 1)
+        self.assertEqual(retried_body["move_history"][-1]["move_uci"], "d2d4")
+        self.assertNotEqual(retried_body["fen"], start_fen)
+
+    def test_study_undo_rejects_empty_history(self) -> None:
+        created = self.client.post("/api/games")
+        game = created.json()
+
+        undone = self.client.post(f"/api/games/{game['game_id']}/undo")
+        self.assertEqual(undone.status_code, 400)
+
     def test_terminal_game_transfers_from_checkpoint_to_archive(self) -> None:
         app.state.analysis_service = FakeAnalysisService(
             lambda fen: AnalysisResult(
@@ -454,6 +720,96 @@ class GameApiTests(unittest.TestCase):
 
         archived = self.client.get(f"/api/archive/games/{game['game_id']}")
         self.assertEqual(archived.status_code, 200)
+
+    def test_underpromotion_choice_is_applied_and_preserved(self) -> None:
+        promotion_fen = "k7/4P3/8/8/8/8/8/4K3 w - - 0 1"
+
+        def analysis_for(fen: str) -> AnalysisResult:
+            return AnalysisResult(
+                fen=fen,
+                best_move=CandidateMove(
+                    rank=1,
+                    move_uci="e7e8n" if fen == promotion_fen else "e8f6",
+                    move_san="e8=N+" if fen == promotion_fen else "Nf6+",
+                    score=EvaluationScore(perspective="side_to_move", centipawns=240, mate=None),
+                    principal_variation_uci=("e7e8n",) if fen == promotion_fen else ("e8f6",),
+                    principal_variation_san=("e8=N+",) if fen == promotion_fen else ("Nf6+",),
+                ),
+                top_moves=(
+                    CandidateMove(
+                        rank=1,
+                        move_uci="e7e8n" if fen == promotion_fen else "e8f6",
+                        move_san="e8=N+" if fen == promotion_fen else "Nf6+",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=240, mate=None),
+                        principal_variation_uci=("e7e8n",) if fen == promotion_fen else ("e8f6",),
+                        principal_variation_san=("e8=N+",) if fen == promotion_fen else ("Nf6+",),
+                    ),
+                    CandidateMove(
+                        rank=2,
+                        move_uci="e7e8q" if fen == promotion_fen else "e8g7",
+                        move_san="e8=Q+" if fen == promotion_fen else "Ng7+",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=180, mate=None),
+                        principal_variation_uci=("e7e8q",) if fen == promotion_fen else ("e8g7",),
+                        principal_variation_san=("e8=Q+",) if fen == promotion_fen else ("Ng7+",),
+                    ),
+                    CandidateMove(
+                        rank=3,
+                        move_uci="e7e8r" if fen == promotion_fen else "e8d6",
+                        move_san="e8=R+" if fen == promotion_fen else "Nd6+",
+                        score=EvaluationScore(perspective="side_to_move", centipawns=150, mate=None),
+                        principal_variation_uci=("e7e8r",) if fen == promotion_fen else ("e8d6",),
+                        principal_variation_san=("e8=R+",) if fen == promotion_fen else ("Nd6+",),
+                    ),
+                ),
+                evaluation=EvaluationScore(perspective="side_to_move", centipawns=240, mate=None),
+            )
+
+        app.state.analysis_service = FakeAnalysisService(analysis_for)
+        game_id = self._load_custom_game(promotion_fen, user_id="student-promo")
+
+        moved = self.client.post(
+            f"/api/games/{game_id}/moves",
+            json={"move_uci": "e7e8", "promotion_piece": "n"},
+        )
+
+        self.assertEqual(moved.status_code, 200)
+        body = moved.json()
+        self.assertEqual(body["last_move_uci"], "e7e8n")
+        self.assertEqual(body["move_history"][-1]["move_uci"], "e7e8n")
+        self.assertIn("=N", body["move_history"][-1]["move_san"])
+        self.assertEqual(body["analysis"]["fen"], body["fen"])
+        self.assertIsNotNone(body["feedback"])
+
+        resumed = self.client.get(f"/api/games/{game_id}")
+        self.assertEqual(resumed.status_code, 200)
+        self.assertEqual(resumed.json()["last_move_uci"], "e7e8n")
+
+    def test_invalid_promotion_choice_is_rejected(self) -> None:
+        game_id = self._load_custom_game("4k3/8/8/8/8/8/4P3/K7 w - - 0 1")
+
+        rejected = self.client.post(
+            f"/api/games/{game_id}/moves",
+            json={"move_uci": "e2e4", "promotion_piece": "q"},
+        )
+        self.assertEqual(rejected.status_code, 400)
+
+        promotion_game_id = self._load_custom_game("k7/4P3/8/8/8/8/8/4K3 w - - 0 1")
+        mismatch = self.client.post(
+            f"/api/games/{promotion_game_id}/moves",
+            json={"move_uci": "e7e8n", "promotion_piece": "r"},
+        )
+        self.assertEqual(mismatch.status_code, 400)
+
+    def test_illegal_move_response_preserves_debuggable_context(self) -> None:
+        game_id = self._load_custom_game("4k3/8/8/8/8/8/4r3/R3K3 w Q - 0 1")
+
+        rejected = self.client.post(
+            f"/api/games/{game_id}/moves",
+            json={"move_uci": "a1a2"},
+        )
+
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("Illegal move for current position: a1a2", rejected.json()["detail"])
 
 
 if __name__ == "__main__":

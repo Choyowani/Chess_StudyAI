@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Literal
 
 import chess
 
 
 ColorName = Literal["white", "black"]
+logger = logging.getLogger(__name__)
 
 
 class InvalidMoveError(ValueError):
@@ -92,9 +94,11 @@ class ChessGameState:
         try:
             move = chess.Move.from_uci(move_uci)
         except ValueError as exc:
+            logger.warning("invalid_uci_move", extra=self._debug_context(move_uci))
             raise InvalidMoveError(f"Invalid UCI move: {move_uci}") from exc
 
         if move not in self._board.legal_moves:
+            logger.warning("illegal_move_rejected", extra=self._debug_context(move_uci))
             raise InvalidMoveError(f"Illegal move for current position: {move_uci}")
 
         before_fen = self._board.fen()
@@ -142,6 +146,9 @@ class ChessGameState:
             winner=winner,
         )
 
+    def debug_context(self, attempted_move_uci: str | None = None) -> dict[str, object]:
+        return self._debug_context(attempted_move_uci)
+
     @staticmethod
     def _color_name(color: chess.Color) -> ColorName:
         return "white" if color == chess.WHITE else "black"
@@ -161,3 +168,12 @@ class ChessGameState:
             chess.Termination.VARIANT_DRAW: "variant_draw",
         }
         return mapping.get(termination, termination.name.lower())
+
+    def _debug_context(self, attempted_move_uci: str | None) -> dict[str, object]:
+        return {
+            "attempted_move_uci": attempted_move_uci,
+            "current_fen": self._board.fen(),
+            "side_to_move": self._color_name(self._board.turn),
+            "is_check": self._board.is_check(),
+            "legal_moves_count": self._board.legal_moves.count(),
+        }

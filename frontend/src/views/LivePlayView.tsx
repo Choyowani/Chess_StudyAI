@@ -1,6 +1,6 @@
 import type { DragEvent } from "react";
 import { BoardView } from "../board";
-import type { BoardSquare, CandidateOverlay, ColorName, GameSnapshot } from "../types";
+import type { BoardSquare, CandidateOverlay, ColorName, GameSnapshot, PromotionPieceCode, PromotionPrompt } from "../types";
 import {
   feedbackSummaryMessage,
   formatEvaluation,
@@ -29,19 +29,34 @@ type LivePlayViewProps = {
   message: string;
   selectedSquare: string | null;
   overlays: CandidateOverlay[];
+  activeCandidateMoveUci: string | null;
   checkedSquare: string | null;
   studyPerspective: ColorName;
   isSubmitting: boolean;
+  isSavingStudy: boolean;
   hasReviewReady: boolean;
+  pendingPromotion: PromotionPrompt | null;
   onStudyPerspectiveChange: (value: ColorName) => void;
   onSquareClick: (square: BoardSquare) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
   onDrop: (event: DragEvent<HTMLButtonElement>, square: BoardSquare) => void;
+  onPromotionSelect: (piece: PromotionPieceCode) => void;
+  onPromotionCancel: () => void;
+  onCandidateHover: (moveUci: string | null) => void;
+  onUndo: () => void;
+  onSaveStudy: () => void;
   onCreateGame: () => void;
   onOpenArchive: () => void;
   onOpenReview: () => void;
   onOpenWeakness: () => void;
 };
+
+const promotionChoices: Array<{ piece: PromotionPieceCode; label: string }> = [
+  { piece: "q", label: "퀸" },
+  { piece: "r", label: "룩" },
+  { piece: "b", label: "비숍" },
+  { piece: "n", label: "나이트" },
+];
 
 function qualityTone(label: string): string {
   const normalized = label.toLowerCase();
@@ -58,14 +73,22 @@ export function LivePlayView({
   message,
   selectedSquare,
   overlays,
+  activeCandidateMoveUci,
   checkedSquare,
   studyPerspective,
   isSubmitting,
+  isSavingStudy,
   hasReviewReady,
+  pendingPromotion,
   onStudyPerspectiveChange,
   onSquareClick,
   onDragStart,
   onDrop,
+  onPromotionSelect,
+  onPromotionCancel,
+  onCandidateHover,
+  onUndo,
+  onSaveStudy,
   onCreateGame,
   onOpenArchive,
   onOpenReview,
@@ -85,13 +108,21 @@ export function LivePlayView({
             <h2>{uiGlossary.concepts.liveBoard}</h2>
           </div>
           <div className="toolbar-row">
-            <button type="button" className="secondary-button" onClick={onCreateGame}>
+            <button type="button" className="secondary-button" onClick={onCreateGame} disabled={isSubmitting}>
               {uiGlossary.buttons.createGame}
             </button>
-            <button type="button" className="secondary-button" onClick={onOpenArchive}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onSaveStudy}
+              disabled={isSubmitting || isSavingStudy || snapshot.status.is_game_over}
+            >
+              {uiGlossary.buttons.saveStudy}
+            </button>
+            <button type="button" className="secondary-button" onClick={onOpenArchive} disabled={isSubmitting}>
               {uiGlossary.buttons.openSavedGames}
             </button>
-            <button type="button" className="secondary-button" onClick={onOpenWeakness}>
+            <button type="button" className="secondary-button" onClick={onOpenWeakness} disabled={isSubmitting}>
               {uiGlossary.buttons.openWeakness}
             </button>
           </div>
@@ -103,14 +134,43 @@ export function LivePlayView({
             lastMoveUci={snapshot.last_move_uci}
             checkedSquare={checkedSquare}
             overlays={overlays}
+            activeCandidateMoveUci={activeCandidateMoveUci}
             selectedSquare={selectedSquare}
             interactive
-            disabled={isSubmitting || snapshot.status.is_game_over}
+            disabled={isSubmitting || snapshot.status.is_game_over || Boolean(pendingPromotion)}
             onSquareClick={onSquareClick}
             onDragStart={onDragStart}
             onDrop={onDrop}
           />
         </div>
+
+        {pendingPromotion ? (
+          <section className="promotion-panel">
+            <div className="panel-head compact">
+              <div>
+                <p className="eyebrow">{uiGlossary.sections.promotion}</p>
+                <h3>{uiGlossary.labels.choosePromotionPiece}</h3>
+              </div>
+              <span className="status-pill accent">{pendingPromotion.color === "white" ? "백 승격" : "흑 승격"}</span>
+            </div>
+            <p className="helper-note">{uiScreenText.live.promotionPrompt}</p>
+            <div className="promotion-choice-grid">
+              {promotionChoices.map((choice) => (
+                <button
+                  key={choice.piece}
+                  type="button"
+                  className={`secondary-button promotion-choice ${choice.piece === "q" ? "primary-choice" : ""}`}
+                  onClick={() => onPromotionSelect(choice.piece)}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="secondary-button promotion-cancel-button" onClick={onPromotionCancel}>
+              {uiGlossary.buttons.cancelPromotion}
+            </button>
+          </section>
+        ) : null}
 
         <div className="hero-footer">
           <div className="status-strip">
@@ -118,8 +178,17 @@ export function LivePlayView({
             <span className="status-pill">{movesPlayedLabel(snapshot.move_history.length)}</span>
             <span className="status-pill">{legalMovesCountLabel(snapshot.legal_moves.length)}</span>
             {snapshot.status.is_check ? <span className="status-pill warning">{uiGlossary.concepts.check}</span> : null}
+            <button
+              type="button"
+              className="secondary-button inline-action-button"
+              onClick={onUndo}
+              disabled={isSubmitting || snapshot.status.is_game_over || snapshot.move_history.length === 0}
+            >
+              {uiGlossary.buttons.undoMove}
+            </button>
           </div>
           <p className="support-copy">{message}</p>
+          <p className="helper-note subtle-note">{uiScreenText.live.saveStudyHelper}</p>
           <div className="helper-callout subtle-callout">
             <strong>동기화 원칙:</strong> {uiScreenText.live.syncPrinciple}
           </div>
@@ -143,6 +212,7 @@ export function LivePlayView({
                 type="button"
                 className={`perspective-toggle ${studyPerspective === option ? "active" : ""}`}
                 onClick={() => onStudyPerspectiveChange(option)}
+                disabled={isSubmitting}
               >
                 {studyPerspectiveOptionLabel(option)}
               </button>
@@ -227,7 +297,12 @@ export function LivePlayView({
               <p className="helper-note">{studyCandidateLead(studyPerspective, snapshot.status.turn)}</p>
               <div className="candidate-legend">
                 {analysis.top_moves.slice(0, 3).map((move) => (
-                  <div key={`${move.rank}-${move.move_uci}`} className="candidate-row">
+                  <div
+                    key={`${move.rank}-${move.move_uci}`}
+                    className={`candidate-row ${activeCandidateMoveUci === move.move_uci ? "active" : ""}`}
+                    onMouseEnter={() => onCandidateHover(move.move_uci)}
+                    onMouseLeave={() => onCandidateHover(null)}
+                  >
                     <span className={`candidate-rank rank-${move.rank}`}>{move.rank}</span>
                     <div>
                       <strong>{move.move_san}</strong>
@@ -298,7 +373,7 @@ export function LivePlayView({
           {hasReviewReady ? (
             <div className="stack-sm">
               <p>{uiStatusText.placeholder.reviewReady}</p>
-              <button type="button" className="primary-button" onClick={onOpenReview}>
+              <button type="button" className="primary-button" onClick={onOpenReview} disabled={isSubmitting}>
                 {uiGlossary.buttons.openReview}
               </button>
             </div>

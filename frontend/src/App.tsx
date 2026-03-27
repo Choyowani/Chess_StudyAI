@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
 import { replayContextForPly } from "./archive";
-import { checkedKingSquare, isInteractivePiece, toMoveUci } from "./board";
+import { checkedKingSquare, isInteractivePiece, promotionColorForMove, promotionRequired, toMoveUci } from "./board";
 import type {
   ArchivedGame,
   ArchivedGameSummary,
@@ -12,6 +12,8 @@ import type {
   GameSnapshot,
   InProgressGameSummary,
   MoveRecord,
+  PromotionPieceCode,
+  PromotionPrompt,
   UserWeaknessSummary,
   ViewMode,
   WeaknessPattern,
@@ -24,10 +26,12 @@ import {
   analysisStatusLabel,
   archiveCountLabel,
   checkpointStatusLabel,
-  colorPerspectiveLabel,
   drawMessage,
   checkMessage,
   checkmateMessage,
+  gameOverHeadline,
+  gameOverResultSummary,
+  gameOverStudyLead,
   localizeBackendMessage,
   moveAppliedMessage,
   moveAppliedWithBestReplyMessage,
@@ -36,6 +40,7 @@ import {
   moveCountLabel,
   selectionMessage,
   uiGlossary,
+  uiScreenText,
   uiStatusText,
   turnStatusLabel,
   translateMoveQuality,
@@ -81,6 +86,7 @@ function candidateOverlays(snapshot: GameSnapshot): CandidateOverlay[] {
 
   return snapshot.analysis.top_moves.slice(0, 3).map((move) => ({
     rank: move.rank,
+    moveUci: move.move_uci,
     from: move.move_uci.slice(0, 2),
     to: move.move_uci.slice(2, 4),
   }));
@@ -101,6 +107,7 @@ function sortWeaknessPatterns(patterns: WeaknessPattern[]): WeaknessPattern[] {
 
 export function App() {
   const activeUserId = "local-user";
+  const liveSessionEpochRef = useRef(0);
   const [studyPerspective, setStudyPerspective] = useState<ColorName>(() => {
     if (typeof window === "undefined") {
       return "white";
@@ -116,14 +123,47 @@ export function App() {
   const [selectedWeaknessKey, setSelectedWeaknessKey] = useState<string | null>(null);
   const [selectedReplayPly, setSelectedReplayPly] = useState(0);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
+  const [activeCandidateMoveUci, setActiveCandidateMoveUci] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<PromotionPrompt | null>(null);
+  const [dismissedGameOverModalKey, setDismissedGameOverModalKey] = useState<string | null>(null);
   const [message, setMessage] = useState<string>(uiStatusText.loading.newGame);
   const [archiveMessage, setArchiveMessage] = useState<string>(uiStatusText.loading.archiveList);
   const [resumeMessage, setResumeMessage] = useState<string>(uiStatusText.loading.resumeList);
   const [weaknessMessage, setWeaknessMessage] = useState<string>(uiStatusText.loading.weaknessSummary);
   const [viewMode, setViewMode] = useState<ViewMode>("live");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingStudy, setIsSavingStudy] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
   const [isWeaknessLoading, setIsWeaknessLoading] = useState(false);
+
+  function currentLiveSessionEpoch(): number {
+    return liveSessionEpochRef.current;
+  }
+
+  function beginLiveSessionTransition(): number {
+    liveSessionEpochRef.current += 1;
+    return liveSessionEpochRef.current;
+  }
+
+  function clearLiveTransientState() {
+    setSelectedSquare(null);
+    setActiveCandidateMoveUci(null);
+    setPendingPromotion(null);
+  }
+
+  async function resyncCanonicalSnapshot(gameId: string, requestEpoch: number): Promise<GameSnapshot | null> {
+    try {
+      const canonical = await requestJson<GameSnapshot>(`/api/games/${gameId}`);
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return null;
+      }
+      setSnapshot(canonical);
+      clearLiveTransientState();
+      return canonical;
+    } catch {
+      return null;
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -133,15 +173,29 @@ export function App() {
   }, [studyPerspective]);
 
   async function createGame() {
+    const requestEpoch = beginLiveSessionTransition();
+    setIsSubmitting(true);
     setMessage(uiStatusText.loading.newGame);
     try {
       const created = await requestJson<GameSnapshot>("/api/games", { method: "POST" });
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
       setSnapshot(created);
-      setSelectedSquare(null);
+      clearLiveTransientState();
+      setArchivedGame(null);
+      setSelectedReplayPly(0);
+      setDismissedGameOverModalKey(null);
       setViewMode("live");
       setMessage(uiStatusText.success.newGameReady);
     } catch (error) {
-      setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.createGame);
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.createGame);
+      }
+    } finally {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -164,11 +218,16 @@ export function App() {
     void refreshArchiveList();
   }, [snapshot?.archived_game_id]);
 
+  async function loadInProgressList(): Promise<InProgressGameSummary[]> {
+    const resumableGames = await requestJson<InProgressGameSummary[]>("/api/checkpoints/games");
+    setInProgressList(resumableGames);
+    setResumeMessage(resumableGames.length > 0 ? uiStatusText.success.resumableListLoaded : uiStatusText.empty.resumableList);
+    return resumableGames;
+  }
+
   async function refreshInProgressList() {
     try {
-      const resumableGames = await requestJson<InProgressGameSummary[]>("/api/checkpoints/games");
-      setInProgressList(resumableGames);
-      setResumeMessage(resumableGames.length > 0 ? uiStatusText.success.resumableListLoaded : uiStatusText.empty.resumableList);
+      await loadInProgressList();
     } catch (error) {
       setInProgressList([]);
       setResumeMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadResumeList);
@@ -248,6 +307,11 @@ export function App() {
       archivedGame?.id === snapshot.archived_game_id &&
       archivedGame.review_report,
   );
+  const gameOverModalKey = snapshot?.status.is_game_over
+    ? `${snapshot.game_id}:${snapshot.last_move_uci ?? snapshot.move_history.length}`
+    : null;
+  const shouldShowGameOverModal =
+    gameOverModalKey !== null && dismissedGameOverModalKey !== gameOverModalKey;
 
   async function openArchivedGame(gameId: string) {
     setIsArchiveLoading(true);
@@ -265,34 +329,126 @@ export function App() {
     }
   }
 
-  async function resumeGame(gameId: string) {
-    setResumeMessage(uiStatusText.loading.resumingGame);
+  async function ensureArchivedGameLoaded(gameId: string): Promise<ArchivedGame | null> {
+    if (archivedGame?.id === gameId) {
+      return archivedGame;
+    }
+
+    setIsArchiveLoading(true);
+    setArchiveMessage(uiStatusText.loading.openingArchive);
     try {
-      const resumed = await requestJson<GameSnapshot>(`/api/checkpoints/games/${gameId}/resume`);
-      setSnapshot(resumed);
-      setSelectedSquare(null);
-      setViewMode("live");
-      setMessage(uiStatusText.success.gameResumedWithTurn(gameId, turnStatusLabel(resumed.status.turn)));
-      setResumeMessage(uiStatusText.success.gameResumed(gameId));
+      const archive = await requestJson<ArchivedGame>(`/api/archive/games/${gameId}`);
+      setArchivedGame(archive);
+      setSelectedReplayPly(archive.move_logs.length);
+      setArchiveMessage(uiStatusText.success.archiveOpened(gameId));
+      return archive;
     } catch (error) {
-      setResumeMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.resumeGame);
+      setArchiveMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadArchive);
+      return null;
+    } finally {
+      setIsArchiveLoading(false);
     }
   }
 
-  async function submitMove(from: string, to: string) {
+  async function openReviewForCurrentGame() {
+    const currentSnapshot = snapshot;
+    if (!currentSnapshot) {
+      return;
+    }
+    if (currentSnapshot.archived_game_id) {
+      await ensureArchivedGameLoaded(currentSnapshot.archived_game_id);
+    }
+    setViewMode("review");
+  }
+
+  async function openArchiveForCurrentGame() {
+    const currentSnapshot = snapshot;
+    if (!currentSnapshot) {
+      return;
+    }
+    if (currentSnapshot.archived_game_id) {
+      await ensureArchivedGameLoaded(currentSnapshot.archived_game_id);
+    }
+    setViewMode("archive");
+  }
+
+  async function resumeGame(gameId: string) {
+    const requestEpoch = beginLiveSessionTransition();
+    setIsSubmitting(true);
+    setResumeMessage(uiStatusText.loading.resumingGame);
+    try {
+      const resumed = await requestJson<GameSnapshot>(`/api/checkpoints/games/${gameId}/resume`);
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
+      setSnapshot(resumed);
+      clearLiveTransientState();
+      setArchivedGame(null);
+      setSelectedReplayPly(0);
+      setDismissedGameOverModalKey(null);
+      setViewMode("live");
+      setMessage(
+        resumed.move_history.length > 0
+          ? uiStatusText.success.gameResumedWithUndoReady(gameId, turnStatusLabel(resumed.status.turn))
+          : uiStatusText.success.gameResumedWithTurn(gameId, turnStatusLabel(resumed.status.turn)),
+      );
+      setResumeMessage(uiStatusText.success.gameResumed(gameId));
+    } catch (error) {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setResumeMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.resumeGame);
+      }
+    } finally {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setIsSubmitting(false);
+      }
+    }
+  }
+
+  async function saveCurrentStudy() {
+    if (!snapshot || isSubmitting || snapshot.status.is_game_over) {
+      return;
+    }
+
+    if (snapshot.move_history.length === 0) {
+      setMessage(uiStatusText.success.studySaveReadyAfterFirstMove);
+      return;
+    }
+
+    setIsSavingStudy(true);
+    setMessage(uiStatusText.loading.savingStudy);
+    try {
+      const resumableGames = await loadInProgressList();
+      const currentGameSaved = resumableGames.some((item) => item.game_id === snapshot.game_id);
+      setMessage(currentGameSaved ? uiStatusText.success.studySaved : uiStatusText.success.studySavedPendingList);
+    } catch (error) {
+      setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.saveStudy);
+    } finally {
+      setIsSavingStudy(false);
+    }
+  }
+
+  async function submitMove(from: string, to: string, promotionPiece: PromotionPieceCode | null = null) {
     if (!snapshot || isSubmitting) {
       return;
     }
 
-    const moveUci = toMoveUci(snapshot, from, to);
+    const gameId = snapshot.game_id;
+    const requestEpoch = currentLiveSessionEpoch();
+    const moveUci = toMoveUci(from, to, promotionPiece);
     setIsSubmitting(true);
     try {
-      const next = await requestJson<GameSnapshot>(`/api/games/${snapshot.game_id}/moves`, {
+      const next = await requestJson<GameSnapshot>(`/api/games/${gameId}/moves`, {
         method: "POST",
-        body: JSON.stringify({ move_uci: moveUci }),
+        body: JSON.stringify({
+          move_uci: moveUci,
+          promotion_piece: promotionPiece,
+        }),
       });
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
       setSnapshot(next);
-      setSelectedSquare(null);
+      clearLiveTransientState();
       if (next.status.is_checkmate) {
         setMessage(checkmateMessage(next.status.winner));
       } else if (next.status.is_stalemate) {
@@ -311,15 +467,41 @@ export function App() {
         setMessage(moveAppliedMessage(lastHistoryMove(next)?.move_san ?? moveUci));
       }
     } catch (error) {
-      setSelectedSquare(null);
-      setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.moveFailed);
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
+      const recovered = await resyncCanonicalSnapshot(gameId, requestEpoch);
+      if (recovered) {
+        setMessage(uiStatusText.error.moveRejectedAndResynced);
+      } else {
+        clearLiveTransientState();
+        setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.moveFailed);
+      }
     } finally {
-      setIsSubmitting(false);
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setIsSubmitting(false);
+      }
     }
   }
 
+  function queuePromotionIfNeeded(from: string, to: string): boolean {
+    if (!snapshot || !promotionRequired(snapshot, from, to)) {
+      return false;
+    }
+
+    const color = promotionColorForMove(snapshot, from);
+    setPendingPromotion({
+      from,
+      to,
+      color: color === "b" ? "black" : "white",
+    });
+    setSelectedSquare(from);
+    setMessage(uiStatusText.promotion.prompt);
+    return true;
+  }
+
   function handleSquareClick(square: BoardSquare) {
-    if (!snapshot || isSubmitting) {
+    if (!snapshot || isSubmitting || pendingPromotion) {
       return;
     }
 
@@ -343,11 +525,15 @@ export function App() {
       return;
     }
 
+    if (queuePromotionIfNeeded(selectedSquare, square.square)) {
+      return;
+    }
+
     void submitMove(selectedSquare, square.square);
   }
 
   function handleDragStart(event: DragEvent<HTMLButtonElement>, square: BoardSquare) {
-    if (!snapshot || isSubmitting || !isInteractivePiece(snapshot, square)) {
+    if (!snapshot || isSubmitting || pendingPromotion || !isInteractivePiece(snapshot, square)) {
       event.preventDefault();
       return;
     }
@@ -357,11 +543,67 @@ export function App() {
 
   function handleDrop(event: DragEvent<HTMLButtonElement>, targetSquare: BoardSquare) {
     event.preventDefault();
+    if (pendingPromotion) {
+      return;
+    }
     const from = event.dataTransfer.getData("text/plain");
     if (!from || from === targetSquare.square) {
       return;
     }
+    if (queuePromotionIfNeeded(from, targetSquare.square)) {
+      return;
+    }
     void submitMove(from, targetSquare.square);
+  }
+
+  function handlePromotionSelect(promotionPiece: PromotionPieceCode) {
+    if (!pendingPromotion) {
+      return;
+    }
+    void submitMove(pendingPromotion.from, pendingPromotion.to, promotionPiece);
+  }
+
+  function handlePromotionCancel() {
+    setPendingPromotion(null);
+    setSelectedSquare(null);
+    setActiveCandidateMoveUci(null);
+    setMessage(uiStatusText.promotion.cancelled);
+  }
+
+  async function undoLastMove() {
+    if (!snapshot || isSubmitting || snapshot.status.is_game_over || snapshot.move_history.length === 0) {
+      return;
+    }
+
+    const gameId = snapshot.game_id;
+    const requestEpoch = currentLiveSessionEpoch();
+    setIsSubmitting(true);
+    try {
+      const reverted = await requestJson<GameSnapshot>(`/api/games/${gameId}/undo`, {
+        method: "POST",
+      });
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
+      setSnapshot(reverted);
+      clearLiveTransientState();
+      setMessage(uiStatusText.success.undoReady(turnStatusLabel(reverted.status.turn)));
+    } catch (error) {
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
+      const recovered = await resyncCanonicalSnapshot(gameId, requestEpoch);
+      if (recovered) {
+        setMessage(uiStatusText.error.undoRejectedAndResynced);
+      } else {
+        clearLiveTransientState();
+        setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.undoFailed);
+      }
+    } finally {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setIsSubmitting(false);
+      }
+    }
   }
 
   function openReplayFromPly(plyIndex: number) {
@@ -454,7 +696,12 @@ export function App() {
           <ol className="archive-list compact-list">
             {inProgressList.map((item) => (
               <li key={`checkpoint-${item.game_id}`}>
-                <button type="button" className="archive-card compact-card" onClick={() => void resumeGame(item.game_id)}>
+                <button
+                  type="button"
+                  className="archive-card compact-card"
+                  onClick={() => void resumeGame(item.game_id)}
+                  disabled={isSubmitting}
+                >
                   <div className="archive-card-head">
                     <strong>{checkpointStatusLabel(item.status)}</strong>
                     <span>{moveCountLabel(item.move_count)}</span>
@@ -487,17 +734,25 @@ export function App() {
             message={message}
             selectedSquare={selectedSquare}
             overlays={overlays}
+            activeCandidateMoveUci={activeCandidateMoveUci}
             checkedSquare={checkedSquare}
             studyPerspective={studyPerspective}
             isSubmitting={isSubmitting}
+            isSavingStudy={isSavingStudy}
             hasReviewReady={hasReviewReady}
+            pendingPromotion={pendingPromotion}
             onStudyPerspectiveChange={setStudyPerspective}
             onSquareClick={handleSquareClick}
             onDragStart={handleDragStart}
             onDrop={handleDrop}
+            onPromotionSelect={handlePromotionSelect}
+            onPromotionCancel={handlePromotionCancel}
+            onCandidateHover={setActiveCandidateMoveUci}
+            onUndo={() => void undoLastMove()}
+            onSaveStudy={() => void saveCurrentStudy()}
             onCreateGame={() => void createGame()}
-            onOpenArchive={() => setViewMode("archive")}
-            onOpenReview={() => setViewMode("review")}
+            onOpenArchive={() => void openArchiveForCurrentGame()}
+            onOpenReview={() => void openReviewForCurrentGame()}
             onOpenWeakness={() => setViewMode("weakness")}
           />
         ) : null}
@@ -543,6 +798,87 @@ export function App() {
           />
         ) : null}
       </section>
+
+      {shouldShowGameOverModal ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="game-over-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="game-over-modal-title"
+            aria-describedby="game-over-modal-description"
+          >
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">{uiGlossary.sections.learningComplete}</p>
+                <h2 id="game-over-modal-title">{gameOverHeadline(snapshot.status)}</h2>
+              </div>
+              <span className="status-pill accent">{uiGlossary.sections.afterGame}</span>
+            </div>
+
+            <div className="stack-sm">
+              <p className="body-strong">{gameOverResultSummary(snapshot.status)}</p>
+              <p id="game-over-modal-description" className="helper-note">
+                {uiScreenText.live.gameOverModalBody}
+              </p>
+              <div className="helper-callout">
+                <strong>{uiGlossary.sections.afterGame}</strong>
+                <p>{gameOverStudyLead(hasReviewReady, snapshot.archived_game_id)}</p>
+                {snapshot.archived_game_id ? <p className="subtle-note">{uiStatusText.success.archiveSaved}</p> : null}
+              </div>
+              <div className="modal-action-row">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    if (gameOverModalKey) {
+                      setDismissedGameOverModalKey(gameOverModalKey);
+                    }
+                    void openReviewForCurrentGame();
+                  }}
+                >
+                  {uiGlossary.buttons.openReviewSummary}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    if (gameOverModalKey) {
+                      setDismissedGameOverModalKey(gameOverModalKey);
+                    }
+                    void openArchiveForCurrentGame();
+                  }}
+                >
+                  {uiGlossary.buttons.openSavedReplay}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    if (gameOverModalKey) {
+                      setDismissedGameOverModalKey(gameOverModalKey);
+                    }
+                    void createGame();
+                  }}
+                >
+                  {uiGlossary.buttons.startNewStudy}
+                </button>
+              </div>
+              <button
+                type="button"
+                className="modal-dismiss-button"
+                onClick={() => {
+                  if (gameOverModalKey) {
+                    setDismissedGameOverModalKey(gameOverModalKey);
+                  }
+                }}
+              >
+                {uiGlossary.buttons.closeModal}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

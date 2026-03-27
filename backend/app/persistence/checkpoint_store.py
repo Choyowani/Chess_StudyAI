@@ -60,6 +60,10 @@ class SqliteGameCheckpointRepository:
         move_history: tuple[MoveRecord, ...],
         review_entries: tuple[GameReviewEntry, ...],
     ) -> None:
+        if len(move_history) == 0:
+            self.delete_checkpoint(game_id)
+            return
+
         with sqlite3.connect(self._db_path) as connection:
             connection.execute(
                 """
@@ -91,6 +95,10 @@ class SqliteGameCheckpointRepository:
             ).fetchone()
         if row is None:
             return None
+        move_history = tuple(MoveRecord(**item) for item in json.loads(row["move_history_json"]))
+        if len(move_history) == 0:
+            self.delete_checkpoint(game_id)
+            return None
         return InProgressGameRecord(
             game_id=row["game_id"],
             user_id=row["user_id"],
@@ -100,11 +108,12 @@ class SqliteGameCheckpointRepository:
             updated_at=row["updated_at"],
             status=row["status"],
             user_color=row["user_color"],
-            move_history=tuple(MoveRecord(**item) for item in json.loads(row["move_history_json"])),
+            move_history=move_history,
             review_entries=tuple(self._parse_review_entry(item) for item in json.loads(row["review_entries_json"])),
         )
 
     def list_checkpoints(self, *, limit: int = 50) -> list[InProgressGameSummary]:
+        self._purge_zero_move_checkpoints()
         with sqlite3.connect(self._db_path) as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
@@ -112,6 +121,7 @@ class SqliteGameCheckpointRepository:
                 SELECT game_id, user_id, current_fen, started_at, updated_at, status, user_color,
                        json_array_length(move_history_json) AS move_count
                 FROM in_progress_games
+                WHERE json_array_length(move_history_json) > 0
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """,
@@ -134,6 +144,16 @@ class SqliteGameCheckpointRepository:
     def delete_checkpoint(self, game_id: str) -> None:
         with sqlite3.connect(self._db_path) as connection:
             connection.execute("DELETE FROM in_progress_games WHERE game_id = ?", (game_id,))
+            connection.commit()
+
+    def _purge_zero_move_checkpoints(self) -> None:
+        with sqlite3.connect(self._db_path) as connection:
+            connection.execute(
+                """
+                DELETE FROM in_progress_games
+                WHERE json_array_length(move_history_json) = 0
+                """
+            )
             connection.commit()
 
     def _initialize_schema(self) -> None:

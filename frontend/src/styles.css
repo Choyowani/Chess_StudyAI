@@ -280,6 +280,11 @@ h3 {
   cursor: pointer;
 }
 
+.inline-action-button {
+  min-height: 32px;
+  padding: 6px 12px;
+}
+
 .nav-button {
   width: 100%;
   text-align: left;
@@ -433,6 +438,85 @@ h3 {
   gap: 12px;
 }
 
+.promotion-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(122, 224, 187, 0.26);
+  background: linear-gradient(180deg, rgba(19, 30, 36, 0.96), rgba(13, 21, 27, 0.92));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 10, 14, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.game-over-modal {
+  width: min(640px, 100%);
+  padding: 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(122, 224, 187, 0.22);
+  background:
+    linear-gradient(180deg, rgba(18, 30, 36, 0.98), rgba(10, 17, 22, 0.95)),
+    rgba(14, 22, 28, 0.94);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.modal-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.modal-action-row > button {
+  flex: 1 1 180px;
+}
+
+.modal-dismiss-button {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  color: #9fb5bc;
+  padding: 0;
+  cursor: pointer;
+}
+
+.modal-dismiss-button:hover {
+  color: #dbe7ec;
+}
+
+.promotion-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.promotion-choice {
+  text-align: center;
+  justify-content: center;
+}
+
+.promotion-choice.primary-choice {
+  border-color: rgba(122, 224, 187, 0.42);
+}
+
+.promotion-cancel-button {
+  align-self: flex-start;
+}
+
 .replay-important-strip {
   margin-top: 18px;
   display: flex;
@@ -511,6 +595,17 @@ h3 {
   padding: 10px 12px;
   border-radius: 16px;
   background: rgba(18, 28, 34, 0.92);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+  border: 1px solid transparent;
+}
+
+.candidate-row.active {
+  background: rgba(24, 38, 45, 0.98);
+  border-color: rgba(122, 224, 187, 0.34);
+  transform: translateY(-1px);
 }
 
 .candidate-rank {
@@ -801,6 +896,12 @@ h3 {
   cursor: not-allowed;
 }
 
+.board-square.candidate-muted .candidate-origin,
+.board-square.candidate-muted .candidate-target,
+.board-square.candidate-muted .candidate-badge {
+  opacity: 0.38;
+}
+
 .piece-shell {
   position: relative;
   z-index: 5;
@@ -861,6 +962,14 @@ h3 {
   z-index: 1;
 }
 
+.candidate-origin.layer-2 {
+  inset: 21%;
+}
+
+.candidate-origin.layer-3 {
+  inset: 28%;
+}
+
 .candidate-target {
   width: 24%;
   height: 24%;
@@ -873,9 +982,16 @@ h3 {
   z-index: 2;
 }
 
+.candidate-target.layer-2 {
+  transform: translate(-68%, -32%);
+}
+
+.candidate-target.layer-3 {
+  transform: translate(-32%, -68%);
+}
+
 .candidate-badge {
-  top: 6px;
-  right: 6px;
+  position: relative;
   width: 22px;
   height: 22px;
   display: inline-flex;
@@ -886,6 +1002,22 @@ h3 {
   font-weight: 800;
   color: #081015;
   z-index: 3;
+}
+
+.candidate-badge-stack {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 3;
+}
+
+.candidate-badge-stack .candidate-badge {
+  position: relative;
+  top: auto;
+  right: auto;
 }
 
 .candidate-origin.rank-1 {
@@ -900,6 +1032,12 @@ h3 {
 
 .candidate-origin.rank-3 {
   border-color: rgba(163, 158, 246, 0.74);
+}
+
+.candidate-origin.active {
+  box-shadow:
+    inset 0 0 0 2px rgba(245, 252, 255, 0.24),
+    0 0 0 3px rgba(7, 16, 21, 0.18);
 }
 
 .candidate-target.rank-1 {
@@ -918,6 +1056,10 @@ h3 {
   border-color: rgba(243, 241, 255, 0.84);
 }
 
+.candidate-target.active {
+  box-shadow: 0 0 0 6px rgba(245, 252, 255, 0.12);
+}
+
 .candidate-badge.rank-1 {
   background: rgba(122, 224, 187, 0.96);
 }
@@ -928,6 +1070,10 @@ h3 {
 
 .candidate-badge.rank-3 {
   background: rgba(163, 158, 246, 0.88);
+}
+
+.candidate-badge.active {
+  box-shadow: 0 0 0 2px rgba(245, 252, 255, 0.42);
 }
 
 .square-label {

@@ -1,4 +1,5 @@
 export type ColorName = "white" | "black";
+export type PromotionPieceCode = "q" | "r" | "b" | "n";
 
 export type MoveRecord = {
   ply_index: number;
@@ -173,6 +174,13 @@ export type BoardSquare = {
 
 export type CandidateOverlay = {
   rank: number;
+  moveUci: string;
   from: string;
   to: string;
+};
+
+export type PromotionPrompt = {
+  from: string;
+  to: string;
+  color: ColorName;
 };

@@ -377,6 +377,7 @@ class SqliteGameArchiveRepository:
                 """
             )
             self._ensure_column(connection, "games", "user_id", "TEXT NOT NULL DEFAULT 'local-user'")
+            self._ensure_column(connection, "games", "review_report_json", "TEXT")
             self._ensure_column(connection, "move_logs", "pattern_tags_json", "TEXT NOT NULL DEFAULT '[]'")
             connection.commit()
 

@@ -157,6 +157,7 @@ class GameSnapshotResponse(BaseModel):
 
 class MoveRequest(BaseModel):
     move_uci: str = Field(min_length=4, max_length=5)
+    promotion_piece: Literal["q", "r", "b", "n"] | None = None
 
 
 class GameCreateRequest(BaseModel):
