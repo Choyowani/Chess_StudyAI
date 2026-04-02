@@ -23,9 +23,12 @@ from backend.app.schemas.game import (
     GameSnapshotResponse,
     InProgressGameSummaryResponse,
     MoveRequest,
+    PgnImportRequest,
+    ResignationRequest,
     UserWeaknessSummaryResponse,
 )
 from backend.app.services.game_sessions import GameSession, GameSessionStore
+from backend.app.services.pgn_import import PgnImportError, PgnImportService
 
 
 app = FastAPI(title="Chess Study Assistant API")
@@ -62,6 +65,16 @@ def _analysis_payload(fen: str) -> tuple[dict[str, object] | None, dict[str, str
     return asdict(analysis), None
 
 
+def _pgn_import_service() -> PgnImportService:
+    return PgnImportService(
+        analysis_service=cast(EngineAnalysisService, app.state.analysis_service),
+        feedback_service=cast(FeedbackService, app.state.feedback_service),
+        review_service=cast(ReviewService, app.state.review_service),
+        weakness_service=cast(WeaknessService, app.state.weakness_service),
+        archive_repository=cast(SqliteGameArchiveRepository, app.state.archive_repository),
+    )
+
+
 def _feedback_payload(
     move_record,
     before_analysis_result: AnalysisResult | AnalysisFailure,
@@ -84,8 +97,9 @@ def _snapshot_from_session(
     feedback_error: str | None = None,
 ) -> GameSnapshotResponse:
     history = [asdict(record) for record in session.game_state.move_history]
-    status = asdict(session.game_state.status())
+    status = _effective_status(session)
     last_move = session.game_state.move_history[-1].move_uci if session.game_state.move_history else None
+    legal_moves = [] if cast(bool, status["is_game_over"]) else list(session.game_state.legal_moves())
 
     return GameSnapshotResponse(
         game_id=session.game_id,
@@ -93,7 +107,7 @@ def _snapshot_from_session(
         last_move_uci=last_move,
         move_history=history,
         status=status,
-        legal_moves=list(session.game_state.legal_moves()),
+        legal_moves=legal_moves,
         analysis=analysis,
         analysis_error=analysis_error,
         feedback=feedback,
@@ -116,6 +130,70 @@ def _save_checkpoint(session: GameSession) -> None:
         move_history=session.game_state.move_history,
         review_entries=tuple(session.review_entries),
     )
+
+
+def _terminal_reason_from_status(status: dict[str, object]) -> str | None:
+    if cast(bool, status["is_checkmate"]):
+        return "checkmate"
+    if cast(bool, status["is_stalemate"]):
+        return "stalemate"
+    if cast(bool, status["is_draw"]):
+        return "draw"
+    return None
+
+
+def _effective_status(session: GameSession) -> dict[str, object]:
+    status = asdict(session.game_state.status())
+    if session.terminal_reason is not None:
+        status.update(
+            {
+                "is_check": False,
+                "is_checkmate": False,
+                "is_stalemate": False,
+                "is_draw": False,
+                "draw_reason": None,
+                "is_game_over": True,
+                "result": session.terminal_result,
+                "winner": session.terminal_winner,
+                "terminal_reason": session.terminal_reason,
+            }
+        )
+        return status
+
+    status["terminal_reason"] = _terminal_reason_from_status(status)
+    return status
+
+
+def _archive_completed_session(session: GameSession) -> None:
+    if session.archived_game_id is not None:
+        return
+
+    status = _effective_status(session)
+    if not cast(bool, status["is_game_over"]):
+        return
+
+    archive_repository = cast(SqliteGameArchiveRepository, app.state.archive_repository)
+    weakness_occurrences = cast(WeaknessService, app.state.weakness_service).detect_occurrences(
+        tuple(session.review_entries)
+    )
+    archive_repository.save_completed_game(
+        game_id=session.game_id,
+        user_id=session.user_id,
+        started_at=session.started_at,
+        finished_at=datetime.now(timezone.utc),
+        result=cast(str | None, status["result"]),
+        terminal_reason=cast(str | None, status["terminal_reason"]),
+        user_color="white",
+        initial_fen=session.game_state.initial_fen,
+        final_fen=session.game_state.current_fen(),
+        summary_text="이 완료 대국에 대해 규칙 기반 복기 요약이 생성되었습니다.",
+        review_report=cast(ReviewService, app.state.review_service).build_report(tuple(session.review_entries)),
+        move_history=session.game_state.move_history,
+        review_entries=tuple(session.review_entries),
+        weakness_occurrences=weakness_occurrences,
+    )
+    cast(SqliteGameCheckpointRepository, app.state.checkpoint_repository).delete_checkpoint(session.game_id)
+    session.archived_game_id = session.game_id
 
 
 def _session_from_checkpoint(record: InProgressGameRecord) -> GameSession:
@@ -205,6 +283,19 @@ def list_archived_games(limit: int = 50) -> list[ArchivedGameSummaryResponse]:
     return [ArchivedGameSummaryResponse(**asdict(item)) for item in archived_games]
 
 
+@app.post("/api/archive/import-pgn", response_model=ArchivedGameResponse)
+def import_pgn_as_archived_game(payload: PgnImportRequest) -> ArchivedGameResponse:
+    try:
+        archived = _pgn_import_service().import_pgn(
+            user_id=payload.user_id,
+            pgn_text=payload.pgn_text,
+        )
+    except PgnImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ArchivedGameResponse(**asdict(archived))
+
+
 @app.get("/api/users/{user_id}/weakness-summary", response_model=UserWeaknessSummaryResponse)
 def get_user_weakness_summary(user_id: str) -> UserWeaknessSummaryResponse:
     archive_repository = cast(SqliteGameArchiveRepository, app.state.archive_repository)
@@ -233,6 +324,8 @@ def apply_move(game_id: str, payload: MoveRequest) -> GameSnapshotResponse:
     session = _get_or_restore_session(game_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Game session was not found.")
+    if cast(bool, _effective_status(session)["is_game_over"]):
+        raise HTTPException(status_code=400, detail="Game is already over.")
 
     before_fen = session.game_state.current_fen()
     move_uci = payload.move_uci
@@ -275,29 +368,7 @@ def apply_move(game_id: str, payload: MoveRequest) -> GameSnapshotResponse:
         session.review_entries.pop()
         raise HTTPException(status_code=500, detail="Move was rejected because checkpoint persistence failed.") from exc
 
-    status = session.game_state.status()
-    if status.is_game_over and session.archived_game_id is None:
-        archive_repository = cast(SqliteGameArchiveRepository, app.state.archive_repository)
-        weakness_occurrences = cast(WeaknessService, app.state.weakness_service).detect_occurrences(
-            tuple(session.review_entries)
-        )
-        archive_repository.save_completed_game(
-            game_id=session.game_id,
-            user_id=session.user_id,
-            started_at=session.started_at,
-            finished_at=datetime.now(timezone.utc),
-            result=status.result,
-            user_color="white",
-            initial_fen=session.game_state.initial_fen,
-            final_fen=session.game_state.current_fen(),
-            summary_text="이 완료 대국에 대해 규칙 기반 복기 요약이 생성되었습니다.",
-            review_report=cast(ReviewService, app.state.review_service).build_report(tuple(session.review_entries)),
-            move_history=session.game_state.move_history,
-            review_entries=tuple(session.review_entries),
-            weakness_occurrences=weakness_occurrences,
-        )
-        cast(SqliteGameCheckpointRepository, app.state.checkpoint_repository).delete_checkpoint(session.game_id)
-        session.archived_game_id = session.game_id
+    _archive_completed_session(session)
 
     return _snapshot_from_session(
         session,
@@ -313,7 +384,7 @@ def undo_last_move(game_id: str) -> GameSnapshotResponse:
     session = _get_or_restore_session(game_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Game session was not found.")
-    if session.archived_game_id is not None or session.game_state.status().is_game_over:
+    if session.archived_game_id is not None or cast(bool, _effective_status(session)["is_game_over"]):
         raise HTTPException(status_code=400, detail="Undo is only available during a live study session.")
     if not session.game_state.move_history:
         raise HTTPException(status_code=400, detail="No moves available to undo.")
@@ -337,3 +408,20 @@ def undo_last_move(game_id: str) -> GameSnapshotResponse:
         feedback=None,
         feedback_error=None,
     )
+
+
+@app.post("/api/games/{game_id}/resign", response_model=GameSnapshotResponse)
+def resign_game(game_id: str, payload: ResignationRequest) -> GameSnapshotResponse:
+    session = _get_or_restore_session(game_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Game session was not found.")
+    if cast(bool, _effective_status(session)["is_game_over"]):
+        raise HTTPException(status_code=400, detail="Game is already over.")
+
+    resigned_side = payload.side
+    session.terminal_reason = f"{resigned_side}_resigned"
+    session.terminal_result = "0-1" if resigned_side == "white" else "1-0"
+    session.terminal_winner = "black" if resigned_side == "white" else "white"
+    _archive_completed_session(session)
+
+    return _snapshot_from_session(session)

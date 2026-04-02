@@ -281,6 +281,7 @@ class GameApiTests(unittest.TestCase):
 
         finished_body = moved.json()
         self.assertEqual(finished_body["status"]["result"], "0-1")
+        self.assertEqual(finished_body["status"]["terminal_reason"], "checkmate")
         self.assertEqual(finished_body["archived_game_id"], game["game_id"])
 
         archived = self.client.get(f"/api/archive/games/{game['game_id']}")
@@ -289,6 +290,7 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(archive_body["id"], game["game_id"])
         self.assertEqual(archive_body["user_id"], "student-a")
         self.assertEqual(archive_body["result"], "0-1")
+        self.assertEqual(archive_body["terminal_reason"], "checkmate")
         self.assertIn("Qh4#", archive_body["pgn"])
         self.assertEqual(len(archive_body["move_logs"]), 4)
         self.assertEqual(archive_body["move_logs"][0]["before_fen"], chess.STARTING_FEN)
@@ -356,6 +358,7 @@ class GameApiTests(unittest.TestCase):
                 columns = {row[1] for row in connection.execute("PRAGMA table_info(games)").fetchall()}
 
             self.assertIn("review_report_json", columns)
+            self.assertIn("terminal_reason", columns)
             self.assertIsNotNone(migrated_repository)
         finally:
             if "migrated_repository" in locals():
@@ -405,9 +408,76 @@ class GameApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(body), 1)
         matching = next(item for item in body if item["game_id"] == game["game_id"])
         self.assertEqual(matching["result"], "0-1")
+        self.assertEqual(matching["terminal_reason"], "checkmate")
         self.assertEqual(matching["move_count"], 4)
         self.assertEqual(matching["user_color"], "white")
         self.assertIsNotNone(matching["summary_preview"])
+
+    def test_pgn_import_creates_archived_game_without_engine(self) -> None:
+        app.state.analysis_service = FakeAnalysisService(
+            lambda fen: AnalysisFailure(
+                fen=fen,
+                error_type="EngineUnavailableError",
+                message="Engine path is not configured.",
+            )
+        )
+
+        pgn_text = """
+[Event "Imported Study Game"]
+[Site "?"]
+[Date "2026.04.02"]
+[Round "-"]
+[White "Alice"]
+[Black "Bob"]
+[Result "0-1"]
+[Termination "won on time"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 0-1
+        """.strip()
+
+        imported = self.client.post(
+            "/api/archive/import-pgn",
+            json={"user_id": "student-import", "pgn_text": pgn_text},
+        )
+        self.assertEqual(imported.status_code, 200)
+        body = imported.json()
+        self.assertEqual(body["user_id"], "student-import")
+        self.assertEqual(body["result"], "0-1")
+        self.assertEqual(body["terminal_reason"], "white_time_forfeit")
+        self.assertEqual(len(body["move_logs"]), 6)
+        self.assertEqual(body["move_logs"][0]["before_fen"], chess.STARTING_FEN)
+        self.assertIn('Termination "won on time"', body["pgn"])
+        self.assertIsNotNone(body["review_report"])
+
+        listed = self.client.get("/api/archive/games")
+        self.assertEqual(listed.status_code, 200)
+        matching = next(item for item in listed.json() if item["game_id"] == body["id"])
+        self.assertEqual(matching["terminal_reason"], "white_time_forfeit")
+        self.assertEqual(matching["move_count"], 6)
+
+        loaded = self.client.get(f"/api/archive/games/{body['id']}")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(loaded.json()["id"], body["id"])
+
+    def test_pgn_import_rejects_invalid_movetext(self) -> None:
+        invalid_pgn = """
+[Event "Broken"]
+[Site "?"]
+[Date "2026.04.02"]
+[Round "-"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+
+1. NotAMove 1-0
+        """.strip()
+
+        imported = self.client.post(
+            "/api/archive/import-pgn",
+            json={"user_id": "student-import", "pgn_text": invalid_pgn},
+        )
+        self.assertEqual(imported.status_code, 400)
+        self.assertIn("수순", imported.json()["detail"])
 
     def test_user_weakness_summary_aggregates_patterns(self) -> None:
         def analysis_for(fen: str) -> AnalysisResult:
@@ -799,6 +869,58 @@ class GameApiTests(unittest.TestCase):
             json={"move_uci": "e7e8n", "promotion_piece": "r"},
         )
         self.assertEqual(mismatch.status_code, 400)
+
+    def test_white_resignation_archives_game_and_blocks_further_moves(self) -> None:
+        created = self.client.post("/api/games", json={"user_id": "student-resign-white"})
+        self.assertEqual(created.status_code, 200)
+        game = created.json()
+
+        moved = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "e2e4"})
+        self.assertEqual(moved.status_code, 200)
+
+        resigned = self.client.post(
+            f"/api/games/{game['game_id']}/resign",
+            json={"side": "white"},
+        )
+        self.assertEqual(resigned.status_code, 200)
+        body = resigned.json()
+        self.assertTrue(body["status"]["is_game_over"])
+        self.assertEqual(body["status"]["terminal_reason"], "white_resigned")
+        self.assertEqual(body["status"]["result"], "0-1")
+        self.assertEqual(body["status"]["winner"], "black")
+        self.assertEqual(body["archived_game_id"], game["game_id"])
+        self.assertEqual(body["legal_moves"], [])
+
+        archived = self.client.get(f"/api/archive/games/{game['game_id']}")
+        self.assertEqual(archived.status_code, 200)
+        archived_body = archived.json()
+        self.assertEqual(archived_body["terminal_reason"], "white_resigned")
+        self.assertEqual(archived_body["result"], "0-1")
+        self.assertIn('Result "0-1"', archived_body["pgn"])
+
+        listed = self.client.get("/api/archive/games")
+        self.assertEqual(listed.status_code, 200)
+        matching = next(item for item in listed.json() if item["game_id"] == game["game_id"])
+        self.assertEqual(matching["terminal_reason"], "white_resigned")
+
+        rejected = self.client.post(f"/api/games/{game['game_id']}/moves", json={"move_uci": "e7e5"})
+        self.assertEqual(rejected.status_code, 400)
+
+    def test_black_resignation_is_supported(self) -> None:
+        created = self.client.post("/api/games", json={"user_id": "student-resign-black"})
+        self.assertEqual(created.status_code, 200)
+        game = created.json()
+
+        resigned = self.client.post(
+            f"/api/games/{game['game_id']}/resign",
+            json={"side": "black"},
+        )
+        self.assertEqual(resigned.status_code, 200)
+        body = resigned.json()
+        self.assertEqual(body["status"]["terminal_reason"], "black_resigned")
+        self.assertEqual(body["status"]["result"], "1-0")
+        self.assertEqual(body["status"]["winner"], "white")
+        self.assertEqual(body["archived_game_id"], game["game_id"])
 
     def test_illegal_move_response_preserves_debuggable_context(self) -> None:
         game_id = self._load_custom_game("4k3/8/8/8/8/8/4r3/R3K3 w Q - 0 1")

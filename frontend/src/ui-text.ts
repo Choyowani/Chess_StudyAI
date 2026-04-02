@@ -1,4 +1,4 @@
-import type { ColorName, EvaluationScore, ViewMode } from "./types";
+import type { ColorName, EvaluationScore, MoveBadgeCategory, ViewMode } from "./types";
 
 export const uiGlossary = {
   product: {
@@ -17,6 +17,7 @@ export const uiGlossary = {
     candidateMoves: "후보 수",
     recommendedMoves: "추천 수",
     moveQuality: "수 평가",
+    moveClassification: "수 분류",
     nextStudyFocus: "다음 학습 포인트",
     reviewContext: "복기 맥락",
     replay: "수순 다시보기",
@@ -52,6 +53,14 @@ export const uiGlossary = {
     closeModal: "나중에 보기",
     undoMove: "이전 수로 되돌리기",
     saveStudy: "학습 저장",
+    resign: "기권",
+    resignWhite: "백 기권",
+    resignBlack: "흑 기권",
+    confirmResignation: "기권 확정",
+    cancelResignation: "계속 두기",
+    importPgn: "PGN 가져오기",
+    startReviewFlow: "리뷰 시작",
+    jumpStraightToReplay: "바로 수순 보기",
   },
   sections: {
     workspace: "작업 영역",
@@ -105,12 +114,18 @@ export const uiGlossary = {
     replayProgress: "복기 진행",
     currentMoment: "현재 장면",
     moveMeaning: "이번 수에서 바로 볼 점",
+    summaryScore: "요약 점수",
+    classificationSummary: "수 분류 요약",
+    overallFlow: "전체 흐름",
+    coachSummary: "한 줄 총평",
+    keyMoments: "주요 장면",
     patterns: "패턴",
     recentSeen: "최근 발생",
     frequency: "발생 빈도",
     actionPriority: "우선도",
     availableExample: "대표 사례",
     choosePromotionPiece: "승격 기물 선택",
+    terminalReason: "종료 사유",
   },
   board: {
     ariaLabel: "체스판",
@@ -136,7 +151,7 @@ export const uiStatusText = {
     prompt: "마지막 랭크에 도달했습니다. 승격할 기물을 고르세요.",
     cancelled: "승격 선택을 취소했습니다.",
   },
-  loading: {
+    loading: {
     newGame: "새 대국을 준비하는 중입니다...",
     archiveList: "저장된 대국 목록을 불러오는 중입니다...",
     resumeList: "이어할 대국 목록을 불러오는 중입니다...",
@@ -144,6 +159,8 @@ export const uiStatusText = {
     openingArchive: "저장된 대국을 여는 중입니다...",
     resumingGame: "저장된 대국을 이어오는 중입니다...",
     savingStudy: "현재 학습 상태를 저장하는 중입니다...",
+    resigningGame: "기권을 처리하는 중입니다...",
+    importingPgn: "PGN 대국을 가져오는 중입니다...",
   },
   success: {
     newGameReady: "대국 준비가 끝났습니다. 백 차례입니다.",
@@ -160,6 +177,8 @@ export const uiStatusText = {
     studySavedPendingList: "현재 학습 상태를 다시 확인했습니다. 이어하기 목록에서 저장 여부를 확인해 보세요.",
     studySaveReadyAfterFirstMove: "첫 수를 둔 뒤부터 이어하기에 저장됩니다.",
     undoReady: (turnText: string) => `이전 수로 되돌렸습니다. ${turnText}에서 다른 수를 다시 시도해 보세요.`,
+    resigned: (side: ColorName) => `${turnLabel(side)}이 기권해 학습이 종료되었습니다.`,
+    pgnImported: (gameId: string) => `${gameId} 대국을 PGN으로 가져와 저장된 대국에 추가했습니다.`,
   },
   empty: {
     archiveList: "저장된 대국이 아직 없습니다.",
@@ -206,8 +225,11 @@ export const uiStatusText = {
     undoFailed: "이전 수로 되돌리지 못했습니다.",
     undoRejectedAndResynced: "되돌리기 요청을 반영하지 못해 최신 대국 상태를 다시 확인했습니다.",
     saveStudy: "현재 학습 상태를 저장하지 못했습니다.",
+    resignGame: "기권 처리에 실패했습니다.",
     feedbackUnavailableTitle: "피드백을 불러오지 못했습니다",
     analysisUnavailableTitle: "분석을 불러오지 못했습니다",
+    importPgn: "PGN 대국을 가져오지 못했습니다.",
+    emptyPgnImport: "가져올 PGN 텍스트를 먼저 붙여 넣어 주세요.",
   },
   placeholder: {
     reviewPreparing: "대국이 끝나면 이곳이 저장된 복기와 수순 다시보기로 넘어가는 입구가 됩니다.",
@@ -254,6 +276,8 @@ export const uiScreenText = {
     gameOverModalTitle: "이번 학습이 끝났습니다",
     gameOverModalBody:
       "종료된 장면을 바로 복기로 이어가면, 방금 끝난 판의 중요한 실수와 흐름 변화를 놓치지 않고 확인할 수 있습니다.",
+    resignationPrompt:
+      "기권은 즉시 학습 종료로 처리되며, 대국 기록과 복기 요약에 종료 사유가 함께 저장됩니다.",
   },
   review: {
     title: uiGlossary.views.review,
@@ -265,11 +289,17 @@ export const uiScreenText = {
   },
   archive: {
     listTitle: "완료된 대국 목록",
+    landingTitle: "게임 리뷰",
     replayTitle: uiGlossary.concepts.replay,
     selectedMoveTitle: "당시 상황",
     candidateReviewTitle: "그때 더 좋았던 선택",
     reviewContextTitle: "학습 메모",
     moveListTitle: "수 목록",
+    importTitle: "PGN으로 대국 가져오기",
+    importBody: "PGN 텍스트를 붙여 넣으면 완료된 대국으로 저장되고, 바로 다시보기와 복기에 연결됩니다.",
+    importHelper: "PGN 헤더와 수순을 그대로 붙여 넣으면 가져오기 후 저장된 대국 목록에 즉시 나타납니다.",
+    importPlaceholder:
+      "[Event \"Imported Game\"]\n[Site \"?\"]\n[Date \"2026.04.02\"]\n[Round \"-\"]\n[White \"White\"]\n[Black \"Black\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0",
     importantMomentsTitle: "중요한 장면 빠르게 보기",
     learningPanelTitle: "지금 이 수에서 배울 점",
     studyFocusTitle: "이 대국에서 다음에 집중할 것",
@@ -279,6 +309,14 @@ export const uiScreenText = {
       "시작 포지션을 불러왔습니다. 수순을 넘기면서 당시의 피드백과 추천 수를 함께 확인해 보세요.",
     moveListHelper:
       "중요한 실수, 좋았던 수, 흐름이 바뀐 순간은 수 목록과 빠른 이동 카드에서 함께 표시됩니다.",
+    landingBody:
+      "저장된 대국을 열면 먼저 전체 흐름과 학습 포인트를 훑어보고, 그다음 필요한 장면으로 수순 복기에 들어갈 수 있습니다.",
+    landingGraphTitle: "한눈에 보는 흐름",
+    landingCountsTitle: "수 분류 요약",
+    landingMomentsTitle: "지금 먼저 볼 장면",
+    landingStudyTitle: "이번 판의 학습 포인트",
+    landingReplayCtaBody:
+      "전체 요약을 먼저 본 뒤 `리뷰 시작`으로 수순 복기에 들어가면, 중요한 장면부터 더 빠르게 따라갈 수 있습니다.",
   },
   weakness: {
     title: "자주 반복되는 학습 패턴",
@@ -294,13 +332,45 @@ export const uiScreenText = {
   },
 } as const;
 
+export function resignationReasonLabel(reason: string | null): string {
+  if (reason === "white_resigned") {
+    return "백 기권";
+  }
+  if (reason === "black_resigned") {
+    return "흑 기권";
+  }
+  if (reason === "checkmate") {
+    return "체크메이트";
+  }
+  if (reason === "white_time_forfeit") {
+    return "백 시간패";
+  }
+  if (reason === "black_time_forfeit") {
+    return "흑 시간패";
+  }
+  if (reason === "time_forfeit") {
+    return "시간패";
+  }
+  if (reason === "stalemate") {
+    return "스테일메이트";
+  }
+  if (reason === "draw") {
+    return "무승부";
+  }
+  return "종료";
+}
+
 export function gameOverHeadline(status: {
   is_checkmate: boolean;
   is_stalemate: boolean;
   is_draw: boolean;
   winner: ColorName | null;
   draw_reason: string | null;
+  terminal_reason: string | null;
 }): string {
+  if (status.terminal_reason === "white_resigned" || status.terminal_reason === "black_resigned") {
+    return "기권으로 학습이 종료되었습니다";
+  }
   if (status.is_checkmate) {
     return "체크메이트로 학습이 종료되었습니다";
   }
@@ -320,7 +390,14 @@ export function gameOverResultSummary(status: {
   winner: ColorName | null;
   result: string | null;
   draw_reason: string | null;
+  terminal_reason: string | null;
 }): string {
+  if (status.terminal_reason === "white_resigned") {
+    return "백이 기권했습니다. 흑 승으로 종료되었으며, 종료 사유는 저장된 대국과 복기에 함께 남습니다.";
+  }
+  if (status.terminal_reason === "black_resigned") {
+    return "흑이 기권했습니다. 백 승으로 종료되었으며, 종료 사유는 저장된 대국과 복기에 함께 남습니다.";
+  }
   if (status.is_checkmate) {
     return `${turnLabel(status.winner ?? "white")} 승리로 끝났습니다. 마지막 장면을 복기로 바로 이어서 보세요.`;
   }
@@ -545,14 +622,22 @@ export function checkpointStatusLabel(status: string): string {
   return status;
 }
 
-export function reviewResultLabel(result: string | null): string {
+export function reviewResultLabel(result: string | null, terminalReason: string | null = null): string {
+  if (terminalReason === "white_resigned") return "흑 승 · 백 기권";
+  if (terminalReason === "black_resigned") return "백 승 · 흑 기권";
+  if (terminalReason === "white_time_forfeit") return "흑 승 · 백 시간패";
+  if (terminalReason === "black_time_forfeit") return "백 승 · 흑 시간패";
   if (result === "1-0") return "백 승";
   if (result === "0-1") return "흑 승";
   if (result === "1/2-1/2") return "무승부";
   return "복기 대기";
 }
 
-export function archiveResultLabel(result: string | null): string {
+export function archiveResultLabel(result: string | null, terminalReason: string | null = null): string {
+  if (terminalReason === "white_resigned") return "흑 승 · 백 기권";
+  if (terminalReason === "black_resigned") return "백 승 · 흑 기권";
+  if (terminalReason === "white_time_forfeit") return "흑 승 · 백 시간패";
+  if (terminalReason === "black_time_forfeit") return "백 승 · 흑 시간패";
   if (result === "1-0") return "백 승";
   if (result === "0-1") return "흑 승";
   if (result === "1/2-1/2") return "무승부";
@@ -580,12 +665,161 @@ export function formatEvaluation(score: EvaluationScore | null): string {
   return `${score.centipawns >= 0 ? "+" : ""}${(score.centipawns / 100).toFixed(2)}폰`;
 }
 
+function normalizeSignedScore(score: EvaluationScore): number | null {
+  if (score.mate !== null) {
+    return score.mate > 0 ? 100000 - Math.abs(score.mate) * 1000 : -100000 + Math.abs(score.mate) * 1000;
+  }
+  return score.centipawns;
+}
+
+function whiteRelativeScore(score: EvaluationScore | null, turn: ColorName | null): number | null {
+  if (!score) {
+    return null;
+  }
+
+  const signedScore = normalizeSignedScore(score);
+  if (signedScore === null) {
+    return null;
+  }
+
+  if (score.perspective === "white") {
+    return signedScore;
+  }
+  if (score.perspective === "black") {
+    return -signedScore;
+  }
+  if (turn === null) {
+    return signedScore;
+  }
+  return turn === "white" ? signedScore : -signedScore;
+}
+
+export function normalizeEvaluationForWhite(score: EvaluationScore | null, turn: ColorName | null): number | null {
+  const whiteScore = whiteRelativeScore(score, turn);
+  if (whiteScore === null) {
+    return null;
+  }
+
+  if (score?.mate !== null) {
+    return whiteScore > 0 ? 0.98 : 0.02;
+  }
+
+  const curve = Math.tanh(whiteScore / 220);
+  return Math.max(0.08, Math.min(0.92, 0.5 + curve * 0.42));
+}
+
+export function evaluationTrendLabel(score: EvaluationScore | null, turn: ColorName | null): string {
+  const whiteScore = whiteRelativeScore(score, turn);
+  if (whiteScore === null) {
+    return "평가 없음";
+  }
+
+  if (score?.mate !== null) {
+    return whiteScore > 0 ? "백 메이트 우세" : "흑 메이트 우세";
+  }
+
+  if (whiteScore >= 180) {
+    return "백 우세";
+  }
+  if (whiteScore >= 60) {
+    return "백이 조금 편함";
+  }
+  if (whiteScore <= -180) {
+    return "흑 우세";
+  }
+  if (whiteScore <= -60) {
+    return "흑이 조금 편함";
+  }
+  return "거의 균형";
+}
+
+export function evaluationBarReadout(score: EvaluationScore | null, turn: ColorName | null): string | null {
+  const whiteScore = whiteRelativeScore(score, turn);
+  if (whiteScore === null) {
+    return null;
+  }
+
+  const mateDistance = score?.mate;
+  if (mateDistance !== null && mateDistance !== undefined) {
+    return whiteScore > 0 ? `백 강제 메이트 ${Math.abs(mateDistance)}수` : `흑 강제 메이트 ${Math.abs(mateDistance)}수`;
+  }
+
+  return `${whiteScore >= 0 ? "+" : ""}${(whiteScore / 100).toFixed(2)}폰 · 백 기준`;
+}
+
 export function formatScoreLoss(scoreLossCentipawns: number): string {
   return `${(scoreLossCentipawns / 100).toFixed(2)}폰 차이`;
 }
 
 export function translateMoveQuality(label: string): string {
   return MOVE_QUALITY_LABELS[label] ?? label;
+}
+
+export function moveClassificationLabel(category: MoveBadgeCategory): string {
+  const labels: Record<MoveBadgeCategory, string> = {
+    best: "최선수",
+    excellent: "탁월한 수",
+    good: "좋은 수",
+    theory: "이론 수",
+    inaccuracy: "부정확",
+    mistake: "실수",
+    missed: "놓친 기회",
+    blunder: "블런더",
+    neutral: "분류 없음",
+  };
+  return labels[category];
+}
+
+export function moveClassificationSymbol(category: MoveBadgeCategory): string {
+  const symbols: Record<MoveBadgeCategory, string> = {
+    best: "★",
+    excellent: "!!",
+    good: "✓",
+    theory: "T",
+    inaccuracy: "?!",
+    mistake: "?",
+    missed: "△",
+    blunder: "??",
+    neutral: "·",
+  };
+  return symbols[category];
+}
+
+export function moveClassificationDescription(category: MoveBadgeCategory): string {
+  const descriptions: Record<MoveBadgeCategory, string> = {
+    best: "기록된 최선 수와 일치하는 선택입니다.",
+    excellent: "이 대국에서 다시 볼 만한 강한 선택으로 표시된 수입니다.",
+    good: "전체 흐름을 크게 해치지 않은 안정적인 수입니다.",
+    theory: "이론 흐름으로 볼 수 있는 수입니다.",
+    inaccuracy: "당장 무너지지는 않지만 가치를 조금 내준 수입니다.",
+    mistake: "국면의 방향을 나쁘게 바꾼 실수입니다.",
+    missed: "더 직접적인 기회나 강제 수를 놓친 장면입니다.",
+    blunder: "짧은 한 수로 큰 손해를 본 장면입니다.",
+    neutral: "현재 저장된 정보만으로는 세부 분류가 없습니다.",
+  };
+  return descriptions[category];
+}
+
+export function archiveLandingScoreLabel(value: number | null): string {
+  if (value === null) {
+    return "점수 없음";
+  }
+  return `${value}점`;
+}
+
+export function moveBadgeToneClass(category: MoveBadgeCategory): string {
+  const tones: Record<MoveBadgeCategory, string> = {
+    best: "move-badge-best",
+    excellent: "move-badge-excellent",
+    good: "move-badge-good",
+    theory: "move-badge-theory",
+    inaccuracy: "move-badge-inaccuracy",
+    mistake: "move-badge-mistake",
+    missed: "move-badge-missed",
+    blunder: "move-badge-blunder",
+    neutral: "move-badge-neutral",
+  };
+  return tones[category];
 }
 
 export function weaknessTypeLabel(patternType: string): string {
@@ -796,11 +1030,14 @@ export function localizeBackendMessage(message: string): string {
     .replace("Undo is only available during a live study session.", "되돌리기는 진행 중인 학습 대국에서만 사용할 수 있습니다.")
     .replace("Move undo was rejected because checkpoint persistence failed.", "체크포인트 저장에 실패해 되돌리기가 취소되었습니다.")
     .replace("Promotion choice does not match the requested move.", "선택한 승격 기물이 요청한 수와 일치하지 않습니다.")
+    .replace("Game is already over.", "이미 종료된 대국입니다.")
     .replace("Failed to create a game.", uiStatusText.error.createGame)
     .replace("Failed to load archived games.", uiStatusText.error.loadArchiveList)
     .replace("Failed to load resumable games.", uiStatusText.error.loadResumeList)
     .replace("Failed to load weakness summary.", uiStatusText.error.loadWeakness)
     .replace("Failed to load archived game.", uiStatusText.error.loadArchive)
+    .replace("PGN 텍스트를 먼저 붙여 넣어 주세요.", uiStatusText.error.emptyPgnImport)
+    .replace("PGN을 읽지 못했습니다. 헤더와 수순 형식을 다시 확인해 주세요.", uiStatusText.error.importPgn)
     .replace("Failed to resume saved game.", uiStatusText.error.resumeGame)
     .replace("Move failed.", uiStatusText.error.moveFailed)
     .replace("Analysis unavailable.", "분석을 불러오지 못했습니다.")

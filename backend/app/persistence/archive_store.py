@@ -40,6 +40,7 @@ class ArchivedGameRecord:
     started_at: str
     finished_at: str
     result: str | None
+    terminal_reason: str | None
     user_color: str
     initial_fen: str
     final_fen: str
@@ -55,6 +56,7 @@ class ArchivedGameSummary:
     started_at: str
     finished_at: str
     result: str | None
+    terminal_reason: str | None
     user_color: str
     move_count: int
     summary_preview: str | None
@@ -76,6 +78,7 @@ class SqliteGameArchiveRepository:
         started_at: datetime,
         finished_at: datetime,
         result: str | None,
+        terminal_reason: str | None,
         user_color: str,
         initial_fen: str,
         final_fen: str,
@@ -84,8 +87,9 @@ class SqliteGameArchiveRepository:
         move_history: tuple[MoveRecord, ...],
         review_entries: tuple[GameReviewEntry, ...],
         weakness_occurrences: tuple[WeaknessOccurrence, ...],
+        pgn_text_override: str | None = None,
     ) -> None:
-        pgn_text = self._build_pgn(initial_fen, move_history)
+        pgn_text = pgn_text_override if pgn_text_override is not None else self._build_pgn(initial_fen, move_history, result=result)
         occurrences_by_ply: dict[int, list[WeaknessOccurrence]] = {}
         for occurrence in weakness_occurrences:
             occurrences_by_ply.setdefault(occurrence.ply_index, []).append(occurrence)
@@ -93,8 +97,8 @@ class SqliteGameArchiveRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO games (
-                    id, user_id, started_at, finished_at, result, user_color, initial_fen, final_fen, pgn, summary_text, review_report_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, user_id, started_at, finished_at, result, terminal_reason, user_color, initial_fen, final_fen, pgn, summary_text, review_report_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
@@ -102,6 +106,7 @@ class SqliteGameArchiveRepository:
                     started_at.astimezone(timezone.utc).isoformat(),
                     finished_at.astimezone(timezone.utc).isoformat(),
                     result,
+                    terminal_reason,
                     user_color,
                     initial_fen,
                     final_fen,
@@ -202,6 +207,7 @@ class SqliteGameArchiveRepository:
             started_at=game_row["started_at"],
             finished_at=game_row["finished_at"],
             result=game_row["result"],
+            terminal_reason=game_row["terminal_reason"],
             user_color=game_row["user_color"],
             initial_fen=game_row["initial_fen"],
             final_fen=game_row["final_fen"],
@@ -238,6 +244,7 @@ class SqliteGameArchiveRepository:
                     games.started_at,
                     games.finished_at,
                     games.result,
+                    games.terminal_reason,
                     games.user_color,
                     games.summary_text,
                     COUNT(move_logs.ply_index) AS move_count
@@ -248,6 +255,7 @@ class SqliteGameArchiveRepository:
                     games.started_at,
                     games.finished_at,
                     games.result,
+                    games.terminal_reason,
                     games.user_color,
                     games.summary_text
                 ORDER BY games.finished_at DESC
@@ -262,6 +270,7 @@ class SqliteGameArchiveRepository:
                 started_at=row["started_at"],
                 finished_at=row["finished_at"],
                 result=row["result"],
+                terminal_reason=row["terminal_reason"],
                 user_color=row["user_color"],
                 move_count=row["move_count"],
                 summary_preview=self._summary_preview(row["summary_text"]),
@@ -338,6 +347,7 @@ class SqliteGameArchiveRepository:
                     started_at TEXT NOT NULL,
                     finished_at TEXT NOT NULL,
                     result TEXT,
+                    terminal_reason TEXT,
                     user_color TEXT NOT NULL,
                     initial_fen TEXT NOT NULL,
                     final_fen TEXT NOT NULL,
@@ -378,6 +388,7 @@ class SqliteGameArchiveRepository:
             )
             self._ensure_column(connection, "games", "user_id", "TEXT NOT NULL DEFAULT 'local-user'")
             self._ensure_column(connection, "games", "review_report_json", "TEXT")
+            self._ensure_column(connection, "games", "terminal_reason", "TEXT")
             self._ensure_column(connection, "move_logs", "pattern_tags_json", "TEXT NOT NULL DEFAULT '[]'")
             connection.commit()
 
@@ -435,7 +446,7 @@ class SqliteGameArchiveRepository:
         ]
 
     @staticmethod
-    def _build_pgn(initial_fen: str, move_history: tuple[MoveRecord, ...]) -> str:
+    def _build_pgn(initial_fen: str, move_history: tuple[MoveRecord, ...], *, result: str | None) -> str:
         board = chess.Board(initial_fen)
         game = chess.pgn.Game()
         if initial_fen != chess.STARTING_FEN:
@@ -447,6 +458,6 @@ class SqliteGameArchiveRepository:
             node = node.add_variation(move)
             board.push(move)
         outcome = board.outcome(claim_draw=True)
-        game.headers["Result"] = outcome.result() if outcome else "*"
+        game.headers["Result"] = result or (outcome.result() if outcome else "*")
         exporter = chess.pgn.StringExporter(headers=True, variations=False, comments=False)
         return game.accept(exporter)

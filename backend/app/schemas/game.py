@@ -27,6 +27,7 @@ class GameStatusResponse(BaseModel):
     is_game_over: bool
     result: str | None
     winner: ColorName | None
+    terminal_reason: str | None = None
 
 
 class EvaluationScoreResponse(BaseModel):
@@ -111,6 +112,7 @@ class ArchivedGameResponse(BaseModel):
     started_at: str
     finished_at: str
     result: str | None
+    terminal_reason: str | None = None
     user_color: str
     initial_fen: str
     final_fen: str
@@ -125,6 +127,7 @@ class ArchivedGameSummaryResponse(BaseModel):
     started_at: str
     finished_at: str
     result: str | None
+    terminal_reason: str | None = None
     user_color: str
     move_count: int
     summary_preview: str | None
@@ -160,8 +163,17 @@ class MoveRequest(BaseModel):
     promotion_piece: Literal["q", "r", "b", "n"] | None = None
 
 
+class ResignationRequest(BaseModel):
+    side: ColorName
+
+
 class GameCreateRequest(BaseModel):
     user_id: str = Field(default="local-user", min_length=1, max_length=100)
+
+
+class PgnImportRequest(BaseModel):
+    user_id: str = Field(default="local-user", min_length=1, max_length=100)
+    pgn_text: str = Field(min_length=1)
 
 
 class WeaknessPatternResponse(BaseModel):

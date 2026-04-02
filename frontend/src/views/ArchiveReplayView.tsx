@@ -1,10 +1,27 @@
-import { BoardView } from "../board";
-import { parseArchivedCandidateMove, replayImportantMoments, replayMomentsByPly, type ReplayMoment } from "../archive";
-import type { ArchivedGame, ArchivedGameSummary, CandidateMove, ColorName } from "../types";
+import { EvaluationBar } from "../components/EvaluationBar";
 import {
+  MoveClassificationBadge,
+  moveBadgeDescriptorForArchivedMove,
+} from "../components/MoveClassificationBadge";
+import { BoardView } from "../board";
+import {
+  parseArchivedCandidateMove,
+  replayLandingSummary,
+  replayEvaluationForPly,
+  replayImportantMoments,
+  replayMomentsByPly,
+  type ReplayMoment,
+} from "../archive";
+import type { ArchiveStage, ArchivedGame, ArchivedGameSummary, CandidateMove, ColorName } from "../types";
+import {
+  archiveLandingScoreLabel,
   archiveResultLabel,
   colorPerspectiveLabel,
   localizeStudyText,
+  moveBadgeToneClass,
+  moveClassificationLabel,
+  moveClassificationDescription,
+  moveClassificationSymbol,
   moveCountLabel,
   replayMoveStudyLead,
   replayPerspectiveStatusLabel,
@@ -12,6 +29,7 @@ import {
   replayPlanLead,
   replayProgressLabel,
   replayReviewNotesLead,
+  resignationReasonLabel,
   reviewContextChipLabel,
   studyPerspectiveOptionLabel,
   uiGlossary,
@@ -32,14 +50,21 @@ type ArchiveReplayViewProps = {
   archivedGame: ArchivedGame | null;
   archiveList: ArchivedGameSummary[];
   archiveMessage: string;
+  pgnImportText: string;
+  pgnImportMessage: string;
   isArchiveLoading: boolean;
+  isImportingPgn: boolean;
+  archiveStage: ArchiveStage;
   selectedReplayPly: number;
   replayContext: ReplayMoveContext;
   studyPerspective: ColorName;
   onStudyPerspectiveChange: (value: ColorName) => void;
   onSelectArchivedGame: (gameId: string) => void;
+  onStartReplay: () => void;
   onSelectReplayPly: (ply: number) => void;
   onRefreshArchiveList: () => void;
+  onPgnImportTextChange: (value: string) => void;
+  onImportPgn: () => void;
   onOpenReview: () => void;
   onOpenWeakness: () => void;
 };
@@ -48,14 +73,21 @@ export function ArchiveReplayView({
   archivedGame,
   archiveList,
   archiveMessage,
+  pgnImportText,
+  pgnImportMessage,
   isArchiveLoading,
+  isImportingPgn,
+  archiveStage,
   selectedReplayPly,
   replayContext,
   studyPerspective,
   onStudyPerspectiveChange,
   onSelectArchivedGame,
+  onStartReplay,
   onSelectReplayPly,
   onRefreshArchiveList,
+  onPgnImportTextChange,
+  onImportPgn,
   onOpenReview,
   onOpenWeakness,
 }: ArchiveReplayViewProps) {
@@ -69,15 +101,202 @@ export function ArchiveReplayView({
         .sort((left, right) => left.rank - right.rank)
     : [];
   const reviewReport = archivedGame?.review_report ?? null;
+  const landingSummary = replayLandingSummary(archivedGame);
   const currentMomentKinds = replayContext?.matchedMoments ?? [];
   const replayTurnAfterMove: ColorName | null = replayMove
     ? replayMove.side_to_move_before === "white"
       ? "black"
       : "white"
     : null;
+  const replayEvaluation = replayEvaluationForPly(archivedGame, selectedReplayPly);
+  const replayMoveBadge = replayMove
+    ? moveBadgeDescriptorForArchivedMove({
+        moveUci: replayMove.move_uci,
+        moveQualityLabel: replayMove.move_quality_label,
+        bestMoveUci: replayMove.best_move_uci,
+        note: replayMove.short_coaching_note,
+        patternKeys: replayMove.pattern_tags.map((tag) => tag.pattern_key),
+        reviewKind: currentMomentKinds.some((moment) => moment.kind === "mistake")
+          ? "mistake"
+          : currentMomentKinds.some((moment) => moment.kind === "good")
+            ? "good"
+            : null,
+      })
+    : null;
+
+  function moveBadgeForPly(plyIndex: number) {
+    const move = archivedGame?.move_logs.find((entry) => entry.ply_index === plyIndex);
+    if (!move) {
+      return null;
+    }
+
+    const matchedMoments = momentsByPly.get(plyIndex) ?? [];
+    return moveBadgeDescriptorForArchivedMove({
+      moveUci: move.move_uci,
+      moveQualityLabel: move.move_quality_label,
+      bestMoveUci: move.best_move_uci,
+      note: move.short_coaching_note,
+      patternKeys: move.pattern_tags.map((tag) => tag.pattern_key),
+      reviewKind: matchedMoments.some((moment) => moment.kind === "mistake")
+        ? "mistake"
+        : matchedMoments.some((moment) => moment.kind === "good")
+          ? "good"
+          : null,
+    });
+  }
+
+  const reviewLanding = archivedGame ? (
+    <>
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">{uiScreenText.archive.landingTitle}</p>
+          <h2>{archiveResultLabel(archivedGame.result, archivedGame.terminal_reason)}</h2>
+        </div>
+        <div className="toolbar-row">
+          <button type="button" className="primary-button" onClick={onStartReplay}>
+            {uiGlossary.buttons.startReviewFlow}
+          </button>
+          <button type="button" className="secondary-button" onClick={() => { onSelectReplayPly(archivedGame.move_logs.length); onStartReplay(); }}>
+            {uiGlossary.buttons.jumpStraightToReplay}
+          </button>
+        </div>
+      </div>
+
+      <div className="archive-landing-layout">
+        <section className="archive-landing-main stack-sm">
+          <div className="helper-callout">
+            <strong>{uiGlossary.labels.coachSummary}</strong>
+            <p>
+              {archivedGame.summary_text
+                ? localizeStudyText(archivedGame.summary_text)
+                : uiStatusText.empty.storedReviewSummary}
+            </p>
+          </div>
+
+          <div className="archive-landing-board-card">
+            <div className="panel-head compact">
+              <div>
+                <p className="eyebrow">{uiGlossary.labels.overallFlow}</p>
+                <h3>{uiScreenText.archive.landingGraphTitle}</h3>
+              </div>
+              <span className="status-pill">{moveCountLabel(archivedGame.move_logs.length)}</span>
+            </div>
+            <p className="helper-note subtle-note">{uiScreenText.archive.landingBody}</p>
+            <div className="archive-landing-trend" aria-label={uiGlossary.labels.overallFlow}>
+              {landingSummary?.trendCategories.length ? (
+                landingSummary.trendCategories.map((category, index) => (
+                  <span
+                    key={`trend-${index + 1}`}
+                    className={`archive-trend-segment ${moveBadgeToneClass(category)}`}
+                    title={`${index + 1}수째 · ${moveClassificationLabel(category)}`}
+                  />
+                ))
+              ) : (
+                <span className="helper-note">{uiStatusText.empty.noReplayMoves}</span>
+              )}
+            </div>
+            <div className="archive-landing-score-grid">
+              {landingSummary?.sideScores.map((score) => (
+                <div key={`score-${score.side}`} className="archive-score-card">
+                  <span className="muted-label">{colorPerspectiveLabel(score.side)}</span>
+                  <strong>{archiveLandingScoreLabel(score.value)}</strong>
+                  <span className="move-jump-subtext">{uiGlossary.labels.summaryScore}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <aside className="archive-landing-side stack-sm">
+          <section className="panel-card compact-panel">
+            <div className="panel-head compact">
+              <div>
+                <p className="eyebrow">{uiGlossary.labels.classificationSummary}</p>
+                <h3>{uiScreenText.archive.landingCountsTitle}</h3>
+              </div>
+            </div>
+            {landingSummary?.classificationCounts.length ? (
+              <div className="archive-badge-summary-grid">
+                {landingSummary.classificationCounts.map((item) => (
+                  <div key={`badge-count-${item.category}`} className="archive-badge-summary-card">
+                    <MoveClassificationBadge
+                      descriptor={{
+                        category: item.category,
+                        label: moveClassificationLabel(item.category),
+                        symbol: moveClassificationSymbol(item.category),
+                        description: moveClassificationDescription(item.category),
+                        toneClass: moveBadgeToneClass(item.category),
+                      }}
+                    />
+                    <strong>{item.count}개</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="helper-note">{uiStatusText.empty.noReplayMoves}</p>
+            )}
+          </section>
+
+          <section className="panel-card compact-panel">
+            <div className="panel-head compact">
+              <div>
+                <p className="eyebrow">{uiGlossary.labels.keyMoments}</p>
+                <h3>{uiScreenText.archive.landingMomentsTitle}</h3>
+              </div>
+            </div>
+            {importantMoments.length ? (
+              <div className="moment-grid replay-moment-grid">
+                {importantMoments.slice(0, 4).map((moment) => (
+                  <button
+                    key={`landing-${moment.kind}-${moment.plyIndex}`}
+                    type="button"
+                    className={`moment-card ${moment.kind === "mistake" ? "moment-card-danger" : moment.kind === "good" ? "moment-card-good" : "moment-card-shift"}`}
+                    onClick={() => {
+                      onSelectReplayPly(moment.plyIndex);
+                      onStartReplay();
+                    }}
+                  >
+                    <div className="archive-moment-meta">
+                      <span className={`status-pill replay-moment-pill replay-moment-pill-${moment.kind}`}>
+                        {reviewContextChipLabel(moment.kind)}
+                      </span>
+                      <span>{moment.plyIndex}수째</span>
+                    </div>
+                    <strong>{moment.moveSan}</strong>
+                    <p className="line-clamp-2">{localizeStudyText(moment.note)}</p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="helper-note">{uiStatusText.empty.noImportantMoments}</p>
+            )}
+          </section>
+
+          <section className="panel-card compact-panel">
+            <div className="panel-head compact">
+              <div>
+                <p className="eyebrow">{uiGlossary.concepts.nextStudyFocus}</p>
+                <h3>{uiScreenText.archive.landingStudyTitle}</h3>
+              </div>
+            </div>
+            <p className="helper-note subtle-note">{uiScreenText.archive.landingReplayCtaBody}</p>
+            {reviewReport?.study_points.length ? (
+              <ol className="detail-list compact-detail-list">
+                {reviewReport.study_points.slice(0, 4).map((point, index) => (
+                  <li key={`landing-study-point-${index + 1}`}>{localizeStudyText(point)}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="helper-note">{uiStatusText.empty.noStudyFocus}</p>
+            )}
+          </section>
+        </aside>
+      </div>
+    </>
+  ) : null;
 
   return (
-    <div className="content-grid content-grid-archive">
+    <div className={`content-grid content-grid-archive ${archiveStage === "landing" ? "archive-stage-landing" : ""}`}>
       <section className="panel-card archive-browser">
         <div className="panel-head">
           <div>
@@ -88,6 +307,32 @@ export function ArchiveReplayView({
             {uiGlossary.buttons.refresh}
           </button>
         </div>
+        <section className="pgn-import-panel">
+          <div className="panel-head compact">
+            <div>
+              <p className="eyebrow">{uiGlossary.concepts.savedGames}</p>
+              <h3>{uiScreenText.archive.importTitle}</h3>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={onImportPgn}
+              disabled={isImportingPgn || pgnImportText.trim().length === 0}
+            >
+              {uiGlossary.buttons.importPgn}
+            </button>
+          </div>
+          <p className="helper-note subtle-note">{uiScreenText.archive.importBody}</p>
+          <textarea
+            className="pgn-import-textarea"
+            value={pgnImportText}
+            onChange={(event) => onPgnImportTextChange(event.target.value)}
+            placeholder={uiScreenText.archive.importPlaceholder}
+            rows={10}
+            spellCheck={false}
+          />
+          <p className="helper-note">{pgnImportMessage}</p>
+        </section>
         <p className="helper-note subtle-note">{archiveMessage}</p>
         <ol className="archive-list compact-list">
           {archiveList.map((item) => (
@@ -99,7 +344,7 @@ export function ArchiveReplayView({
                 disabled={isArchiveLoading}
               >
                 <div className="archive-card-head">
-                  <strong>{archiveResultLabel(item.result)}</strong>
+                  <strong>{archiveResultLabel(item.result, item.terminal_reason)}</strong>
                   <span>{moveCountLabel(item.move_count)}</span>
                 </div>
                 <span>{new Date(item.finished_at).toLocaleDateString()}</span>
@@ -114,6 +359,8 @@ export function ArchiveReplayView({
       <section className="hero-panel">
         {archivedGame && replayContext ? (
           <>
+            {archiveStage === "landing" ? reviewLanding : (
+              <>
             <div className="panel-head">
               <div>
                 <p className="eyebrow">{uiGlossary.concepts.replay}</p>
@@ -135,14 +382,17 @@ export function ArchiveReplayView({
               </div>
             </div>
 
-            <div className="hero-board-wrap">
-              <BoardView
-                fen={replayContext.boardFen}
-                lastMoveUci={replayMove?.move_uci ?? null}
-                checkedSquare={null}
-                overlays={[]}
-                disabled
-              />
+            <div className="board-stage">
+              <EvaluationBar score={replayEvaluation?.score ?? null} turn={replayEvaluation?.turn ?? null} />
+              <div className="hero-board-wrap">
+                <BoardView
+                  fen={replayContext.boardFen}
+                  lastMoveUci={replayMove?.move_uci ?? null}
+                  checkedSquare={null}
+                  overlays={[]}
+                  disabled
+                />
+              </div>
             </div>
 
             <section className="replay-important-strip">
@@ -166,6 +416,9 @@ export function ArchiveReplayView({
                           {reviewContextChipLabel(moment.kind)}
                         </span>
                         <span>{moment.plyIndex}수째</span>
+                        {moveBadgeForPly(moment.plyIndex) ? (
+                          <MoveClassificationBadge descriptor={moveBadgeForPly(moment.plyIndex)!} subtle />
+                        ) : null}
                       </div>
                       <strong>{moment.moveSan}</strong>
                       <p className="line-clamp-2">{localizeStudyText(moment.note)}</p>
@@ -180,7 +433,8 @@ export function ArchiveReplayView({
             <div className="hero-footer">
               <div className="status-strip">
                 <span className="status-pill">{replayProgressLabel(selectedReplayPly, archivedGame.move_logs.length)}</span>
-                <span className="status-pill">{archiveResultLabel(archivedGame.result)}</span>
+                <span className="status-pill">{archiveResultLabel(archivedGame.result, archivedGame.terminal_reason)}</span>
+                {archivedGame.terminal_reason ? <span className="status-pill">{resignationReasonLabel(archivedGame.terminal_reason)}</span> : null}
                 <span className="status-pill">{colorPerspectiveLabel(archivedGame.user_color)}</span>
                 <span className="status-pill accent">{replayPerspectiveStatusLabel(studyPerspective)}</span>
                 {currentMomentKinds.map((moment) => (
@@ -195,6 +449,8 @@ export function ArchiveReplayView({
                   : uiScreenText.archive.replayStartBody}
               </p>
             </div>
+              </>
+            )}
           </>
         ) : (
           <section className="empty-screen">
@@ -206,6 +462,7 @@ export function ArchiveReplayView({
       </section>
 
       <aside className="study-column">
+        {archiveStage === "replay" ? (
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
@@ -252,7 +509,24 @@ export function ArchiveReplayView({
                     onClick={() => onSelectReplayPly(move.ply_index)}
                   >
                     <div className="move-jump-head">
-                      <strong>{move.ply_index}. {move.move_san}</strong>
+                      <div className="move-jump-primary">
+                        <strong>{move.ply_index}. {move.move_san}</strong>
+                        <MoveClassificationBadge
+                          descriptor={moveBadgeDescriptorForArchivedMove({
+                            moveUci: move.move_uci,
+                            moveQualityLabel: move.move_quality_label,
+                            bestMoveUci: move.best_move_uci,
+                            note: move.short_coaching_note,
+                            patternKeys: move.pattern_tags.map((tag) => tag.pattern_key),
+                            reviewKind: momentsByPly.get(move.ply_index)?.some((moment) => moment.kind === "mistake")
+                              ? "mistake"
+                              : momentsByPly.get(move.ply_index)?.some((moment) => moment.kind === "good")
+                                ? "good"
+                                : null,
+                          })}
+                          subtle
+                        />
+                      </div>
                       {momentsByPly.get(move.ply_index)?.length ? (
                         <span className="move-jump-markers">
                           {momentsByPly.get(move.ply_index)?.map((moment) => (
@@ -277,7 +551,9 @@ export function ArchiveReplayView({
             <p className="helper-note">{uiStatusText.empty.noReplayMoves}</p>
           )}
         </section>
+        ) : null}
 
+        {archiveStage === "replay" ? (
         <section className="panel-card">
           <div className="panel-head compact">
             <div>
@@ -292,6 +568,7 @@ export function ArchiveReplayView({
                 <p>{replayMoveStudyLead(studyPerspective, replayMove.side_to_move_before)}</p>
               </div>
               <div className="status-strip">
+                {replayMoveBadge ? <MoveClassificationBadge descriptor={replayMoveBadge} /> : null}
                 <span className={`quality-chip ${replayMove.move_quality_label ? `quality-${replayMove.move_quality_label.toLowerCase()}` : ""}`}>
                   {replayMove.move_quality_label ? translateMoveQuality(replayMove.move_quality_label) : "평가 없음"}
                 </span>
@@ -351,7 +628,9 @@ export function ArchiveReplayView({
             <p className="helper-note">{uiStatusText.empty.noSelectedMove}</p>
           )}
         </section>
+        ) : null}
 
+        {archiveStage === "replay" ? (
         <details className="panel-card collapsible-panel">
           <summary className="panel-summary">
             <div>
@@ -376,7 +655,9 @@ export function ArchiveReplayView({
             <p className="helper-note">{uiStatusText.empty.noStoredCandidates}</p>
           )}
         </details>
+        ) : null}
 
+        {archiveStage === "replay" ? (
         <details className="panel-card collapsible-panel">
           <summary className="panel-summary">
             <div>
@@ -402,6 +683,7 @@ export function ArchiveReplayView({
             <p className="helper-note">{uiStatusText.empty.noStudyFocus}</p>
           )}
         </details>
+        ) : null}
       </aside>
     </div>
   );

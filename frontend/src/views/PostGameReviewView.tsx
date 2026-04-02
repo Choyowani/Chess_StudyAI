@@ -1,10 +1,15 @@
 import type { ArchivedGame, ColorName } from "../types";
 import {
+  MoveClassificationBadge,
+  moveBadgeDescriptorForArchivedMove,
+} from "../components/MoveClassificationBadge";
+import {
   colorPerspectiveLabel,
   localizeStudyText,
   movesPlayedLabel,
   replayPlyLabel,
   replayPerspectiveStatusLabel,
+  resignationReasonLabel,
   reviewItemPerspectiveLead,
   reviewPerspectiveSummary,
   reviewResultLabel,
@@ -53,6 +58,23 @@ export function PostGameReviewView({
   const report = archivedGame.review_report;
   const moveSideForPly = (plyIndex: number): ColorName | null =>
     archivedGame.move_logs.find((move) => move.ply_index === plyIndex)?.side_to_move_before ?? null;
+  const moveLogForPly = (plyIndex: number) => archivedGame.move_logs.find((move) => move.ply_index === plyIndex) ?? null;
+
+  function reviewBadge(plyIndex: number, reviewKind: "mistake" | "good" | "turning") {
+    const move = moveLogForPly(plyIndex);
+    if (!move) {
+      return null;
+    }
+
+    return moveBadgeDescriptorForArchivedMove({
+      moveUci: move.move_uci,
+      moveQualityLabel: move.move_quality_label,
+      bestMoveUci: move.best_move_uci,
+      note: move.short_coaching_note,
+      patternKeys: move.pattern_tags.map((tag) => tag.pattern_key),
+      reviewKind,
+    });
+  }
 
   return (
     <div className="review-layout">
@@ -60,11 +82,12 @@ export function PostGameReviewView({
         <div className="panel-head">
           <div>
             <p className="eyebrow">{uiGlossary.views.review}</p>
-            <h2>{reviewResultLabel(archivedGame.result)}</h2>
+            <h2>{reviewResultLabel(archivedGame.result, archivedGame.terminal_reason)}</h2>
           </div>
           <div className="status-strip">
             <span className="status-pill">{movesPlayedLabel(archivedGame.move_logs.length)}</span>
             <span className="status-pill">{colorPerspectiveLabel(archivedGame.user_color)}</span>
+            {archivedGame.terminal_reason ? <span className="status-pill">{resignationReasonLabel(archivedGame.terminal_reason)}</span> : null}
             <span className="status-pill accent">{replayPerspectiveStatusLabel(studyPerspective)}</span>
           </div>
         </div>
@@ -113,7 +136,12 @@ export function PostGameReviewView({
                 className="moment-card moment-card-danger"
                 onClick={() => onReplayFromPly(item.ply_index)}
               >
-                <strong>{item.move_san}</strong>
+                <div className="moment-card-headline">
+                  <strong>{item.move_san}</strong>
+                  {reviewBadge(item.ply_index, "mistake") ? (
+                    <MoveClassificationBadge descriptor={reviewBadge(item.ply_index, "mistake")!} subtle />
+                  ) : null}
+                </div>
                 <span>{replayPlyLabel(item.ply_index)}</span>
                 <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
                 <p className="line-clamp-3">{localizeStudyText(item.note)}</p>
@@ -146,7 +174,12 @@ export function PostGameReviewView({
                 className="moment-card moment-card-good"
                 onClick={() => onReplayFromPly(item.ply_index)}
                 >
-                  <strong>{item.move_san}</strong>
+                  <div className="moment-card-headline">
+                    <strong>{item.move_san}</strong>
+                    {reviewBadge(item.ply_index, "good") ? (
+                      <MoveClassificationBadge descriptor={reviewBadge(item.ply_index, "good")!} subtle />
+                    ) : null}
+                  </div>
                   <span>{replayPlyLabel(item.ply_index)}</span>
                   <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
                   <p className="line-clamp-3">{localizeStudyText(item.note)}</p>
@@ -175,7 +208,12 @@ export function PostGameReviewView({
                 className="moment-card moment-card-shift"
                 onClick={() => onReplayFromPly(item.ply_index)}
                 >
-                  <strong>{item.move_san}</strong>
+                  <div className="moment-card-headline">
+                    <strong>{item.move_san}</strong>
+                    {reviewBadge(item.ply_index, "turning") ? (
+                      <MoveClassificationBadge descriptor={reviewBadge(item.ply_index, "turning")!} subtle />
+                    ) : null}
+                  </div>
                   <span>{replayPlyLabel(item.ply_index)}</span>
                   <span className="move-jump-subtext">{reviewItemPerspectiveLead(studyPerspective, moveSideForPly(item.ply_index))}</span>
                   <p className="line-clamp-3">{localizeStudyText(item.note)}</p>

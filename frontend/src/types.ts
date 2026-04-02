@@ -20,6 +20,7 @@ export type GameStatus = {
   is_game_over: boolean;
   result: string | null;
   winner: ColorName | null;
+  terminal_reason: string | null;
 };
 
 export type EvaluationScore = {
@@ -104,6 +105,7 @@ export type ArchivedGame = {
   started_at: string;
   finished_at: string;
   result: string | null;
+  terminal_reason: string | null;
   user_color: string;
   initial_fen: string;
   final_fen: string;
@@ -118,6 +120,7 @@ export type ArchivedGameSummary = {
   started_at: string;
   finished_at: string;
   result: string | null;
+  terminal_reason: string | null;
   user_color: string;
   move_count: number;
   summary_preview: string | null;
@@ -166,6 +169,7 @@ export type GameSnapshot = {
 
 export type PieceColor = "w" | "b";
 export type ViewMode = "live" | "review" | "archive" | "weakness";
+export type ArchiveStage = "landing" | "replay";
 
 export type BoardSquare = {
   square: string;
@@ -184,3 +188,14 @@ export type PromotionPrompt = {
   to: string;
   color: ColorName;
 };
+
+export type MoveBadgeCategory =
+  | "best"
+  | "excellent"
+  | "good"
+  | "theory"
+  | "inaccuracy"
+  | "mistake"
+  | "missed"
+  | "blunder"
+  | "neutral";

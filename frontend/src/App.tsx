@@ -4,6 +4,7 @@ import type { DragEvent } from "react";
 import { replayContextForPly } from "./archive";
 import { checkedKingSquare, isInteractivePiece, promotionColorForMove, promotionRequired, toMoveUci } from "./board";
 import type {
+  ArchiveStage,
   ArchivedGame,
   ArchivedGameSummary,
   BoardSquare,
@@ -126,14 +127,20 @@ export function App() {
   const [activeCandidateMoveUci, setActiveCandidateMoveUci] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PromotionPrompt | null>(null);
   const [dismissedGameOverModalKey, setDismissedGameOverModalKey] = useState<string | null>(null);
+  const [isResignationPromptOpen, setIsResignationPromptOpen] = useState(false);
   const [message, setMessage] = useState<string>(uiStatusText.loading.newGame);
   const [archiveMessage, setArchiveMessage] = useState<string>(uiStatusText.loading.archiveList);
+  const [pgnImportText, setPgnImportText] = useState("");
+  const [pgnImportMessage, setPgnImportMessage] = useState<string>(uiScreenText.archive.importHelper);
   const [resumeMessage, setResumeMessage] = useState<string>(uiStatusText.loading.resumeList);
   const [weaknessMessage, setWeaknessMessage] = useState<string>(uiStatusText.loading.weaknessSummary);
   const [viewMode, setViewMode] = useState<ViewMode>("live");
+  const [archiveStage, setArchiveStage] = useState<ArchiveStage>("landing");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingStudy, setIsSavingStudy] = useState(false);
+  const [isResigning, setIsResigning] = useState(false);
   const [isArchiveLoading, setIsArchiveLoading] = useState(false);
+  const [isImportingPgn, setIsImportingPgn] = useState(false);
   const [isWeaknessLoading, setIsWeaknessLoading] = useState(false);
 
   function currentLiveSessionEpoch(): number {
@@ -149,6 +156,7 @@ export function App() {
     setSelectedSquare(null);
     setActiveCandidateMoveUci(null);
     setPendingPromotion(null);
+    setIsResignationPromptOpen(false);
   }
 
   async function resyncCanonicalSnapshot(gameId: string, requestEpoch: number): Promise<GameSnapshot | null> {
@@ -184,8 +192,10 @@ export function App() {
       setSnapshot(created);
       clearLiveTransientState();
       setArchivedGame(null);
+      setArchiveStage("landing");
       setSelectedReplayPly(0);
       setDismissedGameOverModalKey(null);
+      setIsResignationPromptOpen(false);
       setViewMode("live");
       setMessage(uiStatusText.success.newGameReady);
     } catch (error) {
@@ -277,6 +287,7 @@ export function App() {
         const archive = await requestJson<ArchivedGame>(`/api/archive/games/${archivedGameId}`);
         if (!cancelled) {
           setArchivedGame(archive);
+          setArchiveStage("landing");
           setSelectedReplayPly(archive.move_logs.length);
         }
       } catch {
@@ -319,6 +330,7 @@ export function App() {
     try {
       const archive = await requestJson<ArchivedGame>(`/api/archive/games/${gameId}`);
       setArchivedGame(archive);
+      setArchiveStage("landing");
       setSelectedReplayPly(archive.move_logs.length);
       setViewMode("archive");
       setArchiveMessage(uiStatusText.success.archiveOpened(gameId));
@@ -326,6 +338,39 @@ export function App() {
       setArchiveMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.loadArchive);
     } finally {
       setIsArchiveLoading(false);
+    }
+  }
+
+  async function importArchiveFromPgn() {
+    const trimmedPgn = pgnImportText.trim();
+    if (!trimmedPgn) {
+      setPgnImportMessage(uiStatusText.error.emptyPgnImport);
+      return;
+    }
+
+    setIsImportingPgn(true);
+    setPgnImportMessage(uiStatusText.loading.importingPgn);
+    try {
+      const archive = await requestJson<ArchivedGame>("/api/archive/import-pgn", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: activeUserId,
+          pgn_text: trimmedPgn,
+        }),
+      });
+      setArchivedGame(archive);
+      setArchiveStage("landing");
+      setSelectedReplayPly(archive.move_logs.length);
+      setViewMode("archive");
+      setPgnImportText("");
+      setPgnImportMessage(uiStatusText.success.pgnImported(archive.id));
+      setArchiveMessage(uiStatusText.success.archiveOpened(archive.id));
+      await refreshArchiveList();
+      await refreshWeaknessSummary();
+    } catch (error) {
+      setPgnImportMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.importPgn);
+    } finally {
+      setIsImportingPgn(false);
     }
   }
 
@@ -384,8 +429,10 @@ export function App() {
       setSnapshot(resumed);
       clearLiveTransientState();
       setArchivedGame(null);
+      setArchiveStage("landing");
       setSelectedReplayPly(0);
       setDismissedGameOverModalKey(null);
+      setIsResignationPromptOpen(false);
       setViewMode("live");
       setMessage(
         resumed.move_history.length > 0
@@ -424,6 +471,39 @@ export function App() {
       setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.saveStudy);
     } finally {
       setIsSavingStudy(false);
+    }
+  }
+
+  async function resignGame(side: ColorName) {
+    if (!snapshot || isSubmitting || isResigning || snapshot.status.is_game_over) {
+      return;
+    }
+
+    const gameId = snapshot.game_id;
+    const requestEpoch = currentLiveSessionEpoch();
+    setIsResigning(true);
+    setIsResignationPromptOpen(false);
+    setMessage(uiStatusText.loading.resigningGame);
+    try {
+      const resigned = await requestJson<GameSnapshot>(`/api/games/${gameId}/resign`, {
+        method: "POST",
+        body: JSON.stringify({ side }),
+      });
+      if (currentLiveSessionEpoch() !== requestEpoch) {
+        return;
+      }
+      setSnapshot(resigned);
+      clearLiveTransientState();
+      setDismissedGameOverModalKey(null);
+      setMessage(uiStatusText.success.resigned(side));
+    } catch (error) {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setMessage(error instanceof Error ? localizeBackendMessage(error.message) : uiStatusText.error.resignGame);
+      }
+    } finally {
+      if (currentLiveSessionEpoch() === requestEpoch) {
+        setIsResigning(false);
+      }
     }
   }
 
@@ -608,6 +688,7 @@ export function App() {
 
   function openReplayFromPly(plyIndex: number) {
     setSelectedReplayPly(plyIndex);
+    setArchiveStage("replay");
     setViewMode("archive");
   }
 
@@ -739,6 +820,7 @@ export function App() {
             studyPerspective={studyPerspective}
             isSubmitting={isSubmitting}
             isSavingStudy={isSavingStudy}
+            isResigning={isResigning}
             hasReviewReady={hasReviewReady}
             pendingPromotion={pendingPromotion}
             onStudyPerspectiveChange={setStudyPerspective}
@@ -750,6 +832,7 @@ export function App() {
             onCandidateHover={setActiveCandidateMoveUci}
             onUndo={() => void undoLastMove()}
             onSaveStudy={() => void saveCurrentStudy()}
+            onOpenResignationPrompt={() => setIsResignationPromptOpen(true)}
             onCreateGame={() => void createGame()}
             onOpenArchive={() => void openArchiveForCurrentGame()}
             onOpenReview={() => void openReviewForCurrentGame()}
@@ -773,14 +856,21 @@ export function App() {
             archivedGame={archivedGame}
             archiveList={archiveList}
             archiveMessage={archiveMessage}
+            pgnImportText={pgnImportText}
+            pgnImportMessage={pgnImportMessage}
             isArchiveLoading={isArchiveLoading}
+            isImportingPgn={isImportingPgn}
+            archiveStage={archiveStage}
             selectedReplayPly={selectedReplayPly}
             replayContext={replayContext}
             studyPerspective={studyPerspective}
             onStudyPerspectiveChange={setStudyPerspective}
             onSelectArchivedGame={(gameId) => void openArchivedGame(gameId)}
+            onStartReplay={() => setArchiveStage("replay")}
             onSelectReplayPly={setSelectedReplayPly}
             onRefreshArchiveList={() => void refreshArchiveList()}
+            onPgnImportTextChange={setPgnImportText}
+            onImportPgn={() => void importArchiveFromPgn()}
             onOpenReview={() => setViewMode("review")}
             onOpenWeakness={() => setViewMode("weakness")}
           />
@@ -874,6 +964,57 @@ export function App() {
                 }}
               >
                 {uiGlossary.buttons.closeModal}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isResignationPromptOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="game-over-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resign-modal-title"
+            aria-describedby="resign-modal-description"
+          >
+            <div className="panel-head">
+              <div>
+                <p className="eyebrow">{uiGlossary.buttons.resign}</p>
+                <h2 id="resign-modal-title">어느 쪽이 기권할지 확인하세요</h2>
+              </div>
+              <span className="status-pill warning">{uiGlossary.buttons.resign}</span>
+            </div>
+            <div className="stack-sm">
+              <p id="resign-modal-description" className="body-strong">
+                기권은 즉시 학습 종료로 처리되며, 종료 사유가 저장된 대국과 복기에 함께 남습니다.
+              </p>
+              <p className="helper-note">{uiScreenText.live.resignationPrompt}</p>
+              <div className="modal-action-row">
+                <button
+                  type="button"
+                  className="secondary-button warning-action"
+                  onClick={() => void resignGame("white")}
+                  disabled={isSubmitting || isResigning}
+                >
+                  {uiGlossary.buttons.resignWhite}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button warning-action"
+                  onClick={() => void resignGame("black")}
+                  disabled={isSubmitting || isResigning}
+                >
+                  {uiGlossary.buttons.resignBlack}
+                </button>
+              </div>
+              <button
+                type="button"
+                className="modal-dismiss-button"
+                onClick={() => setIsResignationPromptOpen(false)}
+              >
+                {uiGlossary.buttons.cancelResignation}
               </button>
             </div>
           </section>

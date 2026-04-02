@@ -17,6 +17,9 @@ class GameSession:
     started_at: datetime
     review_entries: list[GameReviewEntry]
     archived_game_id: str | None = None
+    terminal_reason: str | None = None
+    terminal_result: str | None = None
+    terminal_winner: str | None = None
 
 
 class GameSessionStore:

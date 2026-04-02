@@ -1,4 +1,5 @@
 import type { DragEvent } from "react";
+import { EvaluationBar } from "../components/EvaluationBar";
 import { BoardView } from "../board";
 import type { BoardSquare, CandidateOverlay, ColorName, GameSnapshot, PromotionPieceCode, PromotionPrompt } from "../types";
 import {
@@ -34,6 +35,7 @@ type LivePlayViewProps = {
   studyPerspective: ColorName;
   isSubmitting: boolean;
   isSavingStudy: boolean;
+  isResigning: boolean;
   hasReviewReady: boolean;
   pendingPromotion: PromotionPrompt | null;
   onStudyPerspectiveChange: (value: ColorName) => void;
@@ -45,6 +47,7 @@ type LivePlayViewProps = {
   onCandidateHover: (moveUci: string | null) => void;
   onUndo: () => void;
   onSaveStudy: () => void;
+  onOpenResignationPrompt: () => void;
   onCreateGame: () => void;
   onOpenArchive: () => void;
   onOpenReview: () => void;
@@ -78,6 +81,7 @@ export function LivePlayView({
   studyPerspective,
   isSubmitting,
   isSavingStudy,
+  isResigning,
   hasReviewReady,
   pendingPromotion,
   onStudyPerspectiveChange,
@@ -89,6 +93,7 @@ export function LivePlayView({
   onCandidateHover,
   onUndo,
   onSaveStudy,
+  onOpenResignationPrompt,
   onCreateGame,
   onOpenArchive,
   onOpenReview,
@@ -119,6 +124,14 @@ export function LivePlayView({
             >
               {uiGlossary.buttons.saveStudy}
             </button>
+            <button
+              type="button"
+              className="secondary-button warning-action"
+              onClick={onOpenResignationPrompt}
+              disabled={isSubmitting || isResigning || snapshot.status.is_game_over}
+            >
+              {uiGlossary.buttons.resign}
+            </button>
             <button type="button" className="secondary-button" onClick={onOpenArchive} disabled={isSubmitting}>
               {uiGlossary.buttons.openSavedGames}
             </button>
@@ -128,20 +141,23 @@ export function LivePlayView({
           </div>
         </div>
 
-        <div className="hero-board-wrap">
-          <BoardView
-            fen={snapshot.fen}
-            lastMoveUci={snapshot.last_move_uci}
-            checkedSquare={checkedSquare}
-            overlays={overlays}
-            activeCandidateMoveUci={activeCandidateMoveUci}
-            selectedSquare={selectedSquare}
-            interactive
-            disabled={isSubmitting || snapshot.status.is_game_over || Boolean(pendingPromotion)}
-            onSquareClick={onSquareClick}
-            onDragStart={onDragStart}
-            onDrop={onDrop}
-          />
+        <div className="board-stage">
+          <EvaluationBar score={analysisReady ? analysis.evaluation : null} turn={snapshot.status.turn} />
+          <div className="hero-board-wrap">
+            <BoardView
+              fen={snapshot.fen}
+              lastMoveUci={snapshot.last_move_uci}
+              checkedSquare={checkedSquare}
+              overlays={overlays}
+              activeCandidateMoveUci={activeCandidateMoveUci}
+              selectedSquare={selectedSquare}
+              interactive
+              disabled={isSubmitting || snapshot.status.is_game_over || Boolean(pendingPromotion)}
+              onSquareClick={onSquareClick}
+              onDragStart={onDragStart}
+              onDrop={onDrop}
+            />
+          </div>
         </div>
 
         {pendingPromotion ? (
